@@ -1,0 +1,25 @@
+const { contextBridge, ipcRenderer } = require('electron')
+
+contextBridge.exposeInMainWorld('api', {
+  selectVault:       ()          => ipcRenderer.invoke('select-vault'),
+  getVaultPath:      ()          => ipcRenderer.invoke('get-vault-path'),
+  getVaultStats:     (vaultPath) => ipcRenderer.invoke('get-vault-stats', vaultPath),
+  searchFiles:       (args)      => ipcRenderer.invoke('search-files', args),
+  openFile:          (filePath)  => ipcRenderer.invoke('open-file', filePath),
+  openInObsidian:    (filePath)  => ipcRenderer.invoke('open-in-obsidian', filePath),
+  importFiles:       (args)      => ipcRenderer.invoke('import-files', args),
+  selectImportFiles: ()          => ipcRenderer.invoke('select-import-files'),
+  getVaultFolders:   (vaultPath) => ipcRenderer.invoke('get-vault-folders', vaultPath),
+  listFolderFiles:   (args)      => ipcRenderer.invoke('list-folder-files', args),
+  listFilesByType:   (args)      => ipcRenderer.invoke('list-files-by-type', args),
+  selectInbox:       ()          => ipcRenderer.invoke('select-inbox'),
+  getInboxPath:      ()          => ipcRenderer.invoke('get-inbox-path'),
+  listInboxFiles:    (inboxPath) => ipcRenderer.invoke('list-inbox-files', inboxPath),
+  checkDuplicates:   (vaultPath) => ipcRenderer.invoke('check-duplicate-files', vaultPath),
+  checkEmptyFiles:   (vaultPath) => ipcRenderer.invoke('check-empty-files', vaultPath),
+  deleteFile:        (filePath)  => ipcRenderer.invoke('delete-file', filePath),
+  getTagStats:       (vaultPath) => ipcRenderer.invoke('get-tag-stats', vaultPath),
+  searchByTag:       (args)      => ipcRenderer.invoke('search-by-tag', args),
+  createNote:        (args)      => ipcRenderer.invoke('create-note', args),
+  moveNote:          (args)      => ipcRenderer.invoke('move-note', args),
+})

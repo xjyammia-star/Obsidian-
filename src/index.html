@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Obsidian 管理工具</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #f5f4f0; color: #2c2c2a;
+      height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .topbar {
+      background: #fff; border-bottom: 1px solid #e0dfd8;
+      padding: 0 24px; height: 64px;
+      display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+    }
+    .topbar-title { font-size: 16px; font-weight: 700; white-space: nowrap; margin-right: 8px; }
+    .btn-sm { font-size: 12px; color: #534ab7; background: none; border: 1px solid #afa9ec; border-radius: 6px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+    .btn-sm:hover { background: #eeedfe; }
+    .btn-sm.green { color: #0f6e56; border-color: #9fe1cb; }
+    .btn-sm.green:hover { background: #e1f5ee; }
+    .nav { display: flex; gap: 6px; margin-left: auto; }
+    .nav-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-size: 13px; padding: 8px 18px; border-radius: 10px;
+      border: none; background: none; cursor: pointer; color: #5f5e5a; white-space: nowrap;
+      transition: background 0.12s;
+    }
+    .nav-btn .nav-icon { font-size: 20px; line-height: 1; }
+    .nav-btn .nav-label { font-size: 12px; }
+    .nav-btn:hover { background: #f1efe8; }
+    .nav-btn.active { background: #eeedfe; color: #3c3489; }
+    .nav-btn.active .nav-label { font-weight: 600; }
+    .refresh-btn {
+      font-size: 13px; padding: 6px 14px; border-radius: 8px;
+      border: 1px solid #d3d1c7; background: #fff; cursor: pointer;
+      color: #5f5e5a; display: flex; align-items: center; gap: 5px;
+      transition: all 0.12s; white-space: nowrap;
+    }
+    .refresh-btn:hover { background: #f1efe8; border-color: #888780; }
+    .refresh-btn.spinning .refresh-icon { display: inline-block; animation: spin 0.7s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+    .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; text-align: center; }
+    .welcome h2 { font-size: 22px; font-weight: 500; }
+    .welcome p { font-size: 14px; color: #888780; max-width: 320px; line-height: 1.7; }
+    .btn-primary { background: #534ab7; color: #fff; border: none; border-radius: 8px; padding: 10px 28px; font-size: 15px; cursor: pointer; }
+    .btn-primary:hover { background: #3c3489; }
+    .section-title { font-size: 15px; font-weight: 500; margin-bottom: 12px; }
+    .panel { background: #fff; border: 1px solid #e0dfd8; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
+    .panel.scrollable { overflow-y: auto; max-height: 420px; }
+    /* 统计卡片 */
+    .stats-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: #fff; border: 2px solid #e0dfd8; border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+    .stat-card:hover { border-color: #afa9ec; background: #f8f7fe; }
+    .stat-card.active { border-color: #534ab7; background: #eeedfe; }
+    .stat-card .num { font-size: 26px; font-weight: 500; color: #534ab7; }
+    .stat-card .label { font-size: 12px; color: #888780; margin-top: 3px; }
+    /* 文件夹树 */
+    .tree-item { display: flex; align-items: center; gap: 4px; padding: 3px 4px; font-size: 13px; cursor: pointer; border-radius: 4px; user-select: none; }
+    .tree-item:hover { background: #f1efe8; }
+    .tree-item.selected { background: #eeedfe; color: #3c3489; }
+    .tree-toggle { width: 14px; text-align: center; font-size: 9px; color: #888780; flex-shrink: 0; }
+    .tree-children { margin-left: 14px; border-left: 1px dashed #d3d1c7; padding-left: 8px; }
+    .tree-children.collapsed { display: none; }
+    /* 文件列表 */
+    .folder-file-item { display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f1efe8; font-size:13px; border-radius:4px; }
+    .folder-file-item:last-child { border-bottom:none; }
+    .folder-file-item:hover { background:#f5f4f0; }
+    .ff-icon { font-size:15px; flex-shrink:0; }
+    .ff-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ff-meta { font-size:11px; color:#b4b2a9; white-space:nowrap; }
+    .ff-actions { display:flex; gap:4px; }
+    .ff-btn { font-size:11px; color:#534ab7; background:none; border:none; cursor:pointer; padding:2px 5px; border-radius:3px; white-space:nowrap; }
+    .ff-btn:hover { background:#eeedfe; }
+    .virtual-folder { display:flex; align-items:center; gap:4px; padding:4px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:#854f0b; background:#faeeda; border:1px solid #fac775; margin-bottom:6px; user-select:none; }
+    .virtual-folder:hover { background:#fac775; }
+    /* 标签云 */
+    #tag-cloud-section { margin-bottom:4px; }
+    #tag-cloud-wrap { background:#fff; border:1px solid #e0dfd8; border-radius:12px; padding:14px 16px; }
+    #tag-cloud-wrap.collapsed { display:none; }
+    .tag-toggle-btn { font-size:11px; color:#888780; background:none; border:1px solid #d3d1c7; border-radius:99px; padding:2px 10px; cursor:pointer; }
+    .tag-toggle-btn:hover { background:#f1efe8; }
+    .tag-group { margin-bottom:12px; }
+    .tag-group:last-child { margin-bottom:0; }
+    .tag-group-label { font-size:11px; color:#b4b2a9; margin-bottom:6px; letter-spacing:0.5px; }
+    .tag-row { display:flex; flex-wrap:wrap; gap:6px; }
+    .tag-pill { display:inline-flex; align-items:center; gap:4px; cursor:pointer; border-radius:99px; padding:4px 10px; font-size:12px; border:1px solid transparent; transition:all 0.12s; user-select:none; }
+    .tag-pill.size-lg { font-size:13px; padding:5px 12px; background:#eeedfe; color:#3c3489; border-color:#afa9ec; }
+    .tag-pill.size-md { font-size:12px; padding:4px 10px; background:#f1efe8; color:#444441; border-color:#d3d1c7; }
+    .tag-pill.size-sm { font-size:11px; padding:3px 9px; background:#fafaf8; color:#888780; border-color:#e0dfd8; }
+    .tag-pill:hover { border-color:#534ab7 !important; color:#3c3489 !important; background:#eeedfe !important; }
+    .tag-pill.active { background:#534ab7 !important; color:#fff !important; border-color:#534ab7 !important; }
+    .tag-count { font-size:10px; opacity:0.7; }
+    /* 搜索筛选栏 */
+    .filter-bar { background: #fff; border: 1px solid #e0dfd8; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .filter-group { display: flex; align-items: center; gap: 6px; }
+    .filter-label { font-size: 12px; color: #888780; white-space: nowrap; }
+    .filter-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+    .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px solid #d3d1c7; background: #fff; cursor: pointer; color: #5f5e5a; transition: all 0.1s; user-select: none; }
+    .chip:hover { border-color: #534ab7; color: #534ab7; }
+    .chip.active { background: #534ab7; color: #fff; border-color: #534ab7; }
+    .filter-date { display: flex; align-items: center; gap: 4px; }
+    .date-input { border: 1px solid #d3d1c7; border-radius: 6px; padding: 3px 8px; font-size: 12px; outline: none; color: #444441; }
+    .date-input:focus { border-color: #534ab7; }
+    .filter-sep { color: #d3d1c7; font-size: 12px; }
+    .sort-select { border: 1px solid #d3d1c7; border-radius: 6px; padding: 3px 8px; font-size: 12px; outline: none; color: #444441; background: #fff; }
+    .sort-select:focus { border-color: #534ab7; }
+    .filter-reset { font-size: 12px; color: #888780; background: none; border: none; cursor: pointer; padding: 3px 6px; border-radius: 4px; margin-left: auto; }
+    .filter-reset:hover { background: #f1efe8; color: #444441; }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .search-input { flex: 1; border: 1px solid #d3d1c7; border-radius: 8px; padding: 9px 14px; font-size: 14px; outline: none; background: #fff; }
+    .search-input:focus { border-color: #534ab7; }
+    .btn-search { background: #534ab7; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; cursor: pointer; }
+    .btn-search:hover { background: #3c3489; }
+    .result-item { background: #fff; border: 1px solid #e0dfd8; border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+    .result-item:hover { border-color: #afa9ec; }
+    .result-name { font-size: 14px; font-weight: 500; }
+    .result-path { font-size: 12px; color: #888780; margin-top: 2px; }
+    .result-snippet { font-size: 12px; color: #5f5e5a; margin-top: 6px; line-height: 1.6; }
+    .result-count { font-size: 13px; color: #888780; margin-bottom: 10px; }
+    .result-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .result-actions button { font-size: 11px; padding: 3px 10px; border-radius: 4px; border: 1px solid #d3d1c7; background: #fff; cursor: pointer; color: #444441; }
+    .result-actions button:hover { background: #f1efe8; }
+    .result-actions .obs-btn { color: #534ab7; border-color: #afa9ec; }
+    .result-actions .obs-btn:hover { background: #eeedfe; }
+    /* 导入 */
+    .drop-zone { border: 2px dashed #d3d1c7; border-radius: 12px; padding: 32px 24px; text-align: center; color: #888780; font-size: 14px; margin-bottom: 12px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #534ab7; background: #eeedfe; }
+    .drop-zone .drop-icon { font-size: 28px; margin-bottom: 6px; }
+    .import-file-list { margin-bottom: 12px; }
+    .import-file-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1efe8; font-size: 13px; }
+    .import-file-item:last-child { border-bottom: none; }
+    .remove-btn { color: #b4b2a9; background: none; border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 16px; }
+    .remove-btn:hover { color: #e24b4a; background: #fcebeb; }
+    .folder-select { width: 100%; padding: 8px 12px; border: 1px solid #d3d1c7; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+    .import-result { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 10px; }
+    .import-result.success { background: #eaf3de; color: #3b6d11; }
+    .import-result.error { background: #fcebeb; color: #a32d2d; }
+    /* 笔记检测 */
+    .check-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f1efe8; font-size: 13px; }
+    .check-item:last-child { border-bottom: none; }
+    .check-badge { font-size: 11px; padding: 2px 7px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
+    .check-badge.broken { background: #fcebeb; color: #a32d2d; }
+    .check-badge.orphan { background: #faeeda; color: #854f0b; }
+    /* 新建笔记 */
+    .template-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+    .template-card { background: #fff; border: 2px solid #e0dfd8; border-radius: 10px; padding: 14px 12px; text-align: center; cursor: pointer; transition: border-color 0.15s; }
+    .template-card:hover { border-color: #afa9ec; }
+    .template-card.selected { border-color: #534ab7; background: #eeedfe; }
+    .template-card .t-icon { font-size: 24px; margin-bottom: 6px; }
+    .template-card .t-name { font-size: 13px; font-weight: 500; }
+    .template-card .t-desc { font-size: 11px; color: #888780; margin-top: 3px; }
+    .note-input { width: 100%; padding: 12px 16px; border: 1px solid #d3d1c7; border-radius: 8px; font-size: 16px; font-weight: 500; outline: none; margin-bottom: 10px; }
+    .note-input:focus { border-color: #534ab7; }
+    .note-editor { width: 100%; height: calc(100vh - 420px); min-height: 260px; padding: 14px 16px; border: 1px solid #d3d1c7; border-radius: 8px; font-size: 14px; font-family: 'Consolas', 'Courier New', monospace; line-height: 1.8; resize: none; outline: none; background: #fff; color: #2c2c2a; margin-bottom: 12px; }
+    .note-editor:focus { border-color: #534ab7; }
+    .note-editor::placeholder { color: #b4b2a9; font-family: -apple-system, 'Microsoft YaHei', sans-serif; }
+    /* 设置 */
+    .settings-section { background: #fff; border: 1px solid #e0dfd8; border-radius: 12px; padding: 4px 20px; margin-bottom: 12px; }
+    .settings-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f1efe8; }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-label { font-size: 14px; font-weight: 500; min-width: 110px; }
+    .settings-value { flex: 1; font-size: 13px; color: #5f5e5a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .settings-value.empty { color: #b4b2a9; }
+    /* 通用 */
+    .inbox-btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .empty-tip { color: #b4b2a9; font-size: 13px; text-align: center; padding: 32px; }
+    .loading { color: #888780; font-size: 13px; text-align: center; padding: 24px; }
+    .hidden { display: none !important; }
+    .sep { color: #d3d1c7; font-size: 12px; }
+  </style>
+</head>
+<body>
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="topbar-title">📚 Obsidian 管理工具</div>
+  <div class="nav hidden" id="main-nav">
+    <button class="nav-btn active" onclick="showPage('overview')">
+      <span class="nav-icon">🏠</span><span class="nav-label">知识库概览</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('import')">
+      <span class="nav-icon">📥</span><span class="nav-label">资料整理</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('search')">
+      <span class="nav-icon">🔍</span><span class="nav-label">资料搜索</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('new-note')">
+      <span class="nav-icon">✏️</span><span class="nav-label">新建笔记</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('tools')">
+      <span class="nav-icon">🔧</span><span class="nav-label">资料完善</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('settings')">
+      <span class="nav-icon">⚙️</span><span class="nav-label">系统设置</span>
+    </button>
+    <button class="refresh-btn hidden" id="refresh-btn" onclick="refreshAll()">
+      <span class="refresh-icon">↻</span><span>刷新</span>
+    </button>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- 欢迎页 -->
+<div class="welcome" id="page-welcome">
+  <div style="font-size:52px">📚</div>
+  <h2>欢迎使用 Obsidian 管理工具</h2>
+  <p>第一步：选择你的 Obsidian 知识库文件夹，之后工具会自动记住。</p>
+  <button class="btn-primary" onclick="selectVault()">选择知识库文件夹</button>
+</div>
+
+<!-- 概览页 -->
+<div id="page-overview" class="hidden">
+  <div class="stats-grid">
+    <div class="stat-card" onclick="loadFilesByType('md','Markdown 笔记',this)"><div class="num" id="stat-md">—</div><div class="label">Markdown 笔记</div></div>
+    <div class="stat-card" onclick="loadFilesByType('pdf','PDF 文件',this)"><div class="num" id="stat-pdf">—</div><div class="label">PDF 文件</div></div>
+    <div class="stat-card" onclick="loadFilesByType('image','图片文件',this)"><div class="num" id="stat-img">—</div><div class="label">图片文件</div></div>
+    <div class="stat-card" onclick="loadFilesByType('video','视频文件',this)"><div class="num" id="stat-video">—</div><div class="label">视频文件</div></div>
+    <div class="stat-card" onclick="loadFilesByType('other','其他文件',this)"><div class="num" id="stat-other">—</div><div class="label">其他文件</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div>
+      <div class="section-title">知识库结构</div>
+      <div class="panel scrollable" id="folder-tree"><div class="loading">加载中...</div></div>
+    </div>
+    <div>
+      <div class="section-title" id="folder-files-title">最近修改</div>
+      <div class="panel scrollable" id="folder-files"><div class="loading">加载中...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 搜索页 -->
+<div id="page-search" class="hidden">
+  <div class="search-bar">
+    <input class="search-input" id="search-input" type="text" placeholder="输入关键词搜索文件名或笔记内容…（留空+筛选条件可列出所有符合文件）" onkeydown="if(event.key==='Enter')doSearch()">
+    <button class="btn-search" onclick="doSearch()">搜索</button>
+  </div>
+
+  <!-- 筛选栏 -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <span class="filter-label">文件类型</span>
+      <div class="filter-chips" id="type-chips">
+        <span class="chip active" data-type="all" onclick="toggleType('all',this)">全部</span>
+        <span class="chip" data-type="md" onclick="toggleType('md',this)">📝 笔记</span>
+        <span class="chip" data-type="pdf" onclick="toggleType('pdf',this)">📄 PDF</span>
+        <span class="chip" data-type="image" onclick="toggleType('image',this)">🖼️ 图片</span>
+        <span class="chip" data-type="video" onclick="toggleType('video',this)">🎬 视频</span>
+        <span class="chip" data-type="other" onclick="toggleType('other',this)">📎 其他</span>
+      </div>
+    </div>
+    <div class="filter-sep">|</div>
+    <div class="filter-group">
+      <span class="filter-label">修改日期</span>
+      <div class="filter-date">
+        <input class="date-input" type="date" id="date-from" onchange="doSearch()">
+        <span class="filter-label">至</span>
+        <input class="date-input" type="date" id="date-to" onchange="doSearch()">
+      </div>
+    </div>
+    <div class="filter-sep">|</div>
+    <div class="filter-group">
+      <span class="filter-label">排序</span>
+      <select class="sort-select" id="sort-select" onchange="doSearch()">
+        <option value="relevance">相关度</option>
+        <option value="mtime_desc">最近修改</option>
+        <option value="mtime_asc">最早修改</option>
+        <option value="name_asc">名称 A→Z</option>
+        <option value="name_desc">名称 Z→A</option>
+      </select>
+    </div>
+    <button class="filter-reset" onclick="resetFilters()">重置筛选</button>
+  </div>
+
+  <div id="tag-cloud-section">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:500;color:#5f5e5a">按标签筛选</div>
+      <button class="tag-toggle-btn" id="tag-toggle-btn" onclick="toggleTagCloud()">收起 ▲</button>
+    </div>
+    <div id="tag-cloud-wrap"><div id="tag-cloud"><div class="loading">加载中...</div></div></div>
+  </div>
+  <div id="search-results" style="margin-top:16px"><div class="empty-tip">输入关键词或设置筛选条件后点击搜索</div></div>
+</div>
+
+<!-- 导入页 -->
+<div id="page-import" class="hidden">
+  <div class="inbox-btn-row">
+    <button class="btn-sm green" onclick="loadInboxFiles()">📥 从待处理文件库加载</button>
+    <span style="font-size:12px;color:#888780;align-self:center" id="inbox-path-tip"></span>
+  </div>
+  <div class="drop-zone" id="drop-zone" onclick="pickFiles()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+    <div class="drop-icon">📂</div>
+    <p>点击选择文件，或把文件拖放到这里<br><span style="font-size:12px;color:#b4b2a9">支持任意格式：PDF、图片、视频、Word 等</span></p>
+  </div>
+  <div id="import-file-list" class="import-file-list hidden"></div>
+  <div id="import-actions" class="hidden">
+    <div class="section-title">选择存放位置</div>
+    <select class="folder-select" id="folder-select"></select>
+    <button class="btn-primary" onclick="doImport()">确认导入</button>
+  </div>
+  <div id="import-result" class="hidden"></div>
+</div>
+
+<!-- 笔记工具页 -->
+<div id="page-tools" class="hidden">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <div class="section-title" style="margin:0">🔍 重复文件检测</div>
+          <div style="font-size:12px;color:#888780;margin-top:3px">找出文件名和大小相同的重复文件</div>
+        </div>
+        <button class="btn-sm" onclick="runDuplicates()">开始检测</button>
+      </div>
+      <div class="panel scrollable" id="duplicate-result"><div class="empty-tip">点击「开始检测」扫描知识库中的重复文件</div></div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div>
+          <div class="section-title" style="margin:0">🗑️ 空文件清理</div>
+          <div style="font-size:12px;color:#888780;margin-top:3px">找出没有正文内容的空笔记，可一键删除</div>
+        </div>
+        <button class="btn-sm" onclick="runEmptyFiles()">开始检测</button>
+      </div>
+      <div class="panel scrollable" id="empty-result"><div class="empty-tip">点击「开始检测」找出知识库中的空文件</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 新建笔记页 -->
+<div id="page-new-note" class="hidden">
+  <div class="section-title">选择模板</div>
+  <div class="template-grid">
+    <div class="template-card selected" onclick="selectTemplate('blank',this)"><div class="t-icon">📄</div><div class="t-name">随笔记录</div><div class="t-desc">随时记录想法</div></div>
+    <div class="template-card" onclick="selectTemplate('daily',this)"><div class="t-icon">📅</div><div class="t-name">今日备忘</div><div class="t-desc">今日计划 + 待办事项</div></div>
+    <div class="template-card" onclick="selectTemplate('book',this)"><div class="t-icon">📖</div><div class="t-name">读书笔记</div><div class="t-desc">书名 / 摘录 / 感想</div></div>
+    <div class="template-card" onclick="selectTemplate('meeting',this)"><div class="t-icon">🗒️</div><div class="t-name">会议记录</div><div class="t-desc">人员 / 议题 / 待办</div></div>
+  </div>
+  <input class="note-input" id="note-title" placeholder="笔记标题（选填，留空自动命名）">
+  <textarea class="note-editor" id="note-body" placeholder="在这里写笔记内容…支持 Markdown 格式，写完点「保存笔记」"></textarea>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+    <button class="btn-primary" onclick="doCreateNote()">保存笔记</button>
+    <span style="font-size:13px;color:#888780">→ 保存到待处理文件库</span>
+    <span id="note-inbox-hint" style="font-size:12px;color:#b4b2a9"></span>
+  </div>
+  <div id="note-result" class="import-result hidden"></div>
+  <div id="note-move-section" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid #e0dfd8">
+    <div class="section-title">📁 移入知识库（可选）</div>
+    <p style="font-size:13px;color:#888780;margin-bottom:10px">笔记已保存到待处理文件库，也可以现在直接移入知识库的指定文件夹。</p>
+    <select class="folder-select" id="note-folder-select"></select>
+    <button class="btn-sm" style="padding:7px 16px;font-size:13px" onclick="doMoveNote()">移入知识库</button>
+    <div id="note-move-result" class="import-result hidden" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- 设置页 -->
+<div id="page-settings" class="hidden">
+  <div class="section-title">路径设置</div>
+  <div class="settings-section">
+    <div class="settings-row">
+      <div class="settings-label">📚 知识库路径</div>
+      <div class="settings-value" id="set-vault-path">未设置</div>
+      <button class="btn-sm" onclick="changeVault()">选择文件夹</button>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">📥 待处理文件库</div>
+      <div class="settings-value empty" id="set-inbox-path">未设置</div>
+      <button class="btn-sm green" onclick="changeInbox()">选择文件夹</button>
+    </div>
+  </div>
+  <p style="font-size:12px;color:#888780">待处理文件库：存放还没整理进 Obsidian 的文件，设置后可在「资料整理」页一键加载。</p>
+</div>
+
+</div><!-- end .main -->
+
+<script>
+let currentVaultPath = null, currentInboxPath = null
+let pendingFiles = [], currentTemplate = 'blank'
+let tagCloudLoaded = false, cachedRecent = []
+let lastCreatedNotePath = null
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const vault = await window.api.getVaultPath()
+  const inbox = await window.api.getInboxPath()
+  if (inbox) { currentInboxPath = inbox; updateInboxUI(inbox) }
+  if (vault) { currentVaultPath = vault; showMainUI(vault); loadOverview() }
+})
+
+async function selectVault() {
+  const res = await window.api.selectVault()
+  if (res.success) { currentVaultPath = res.path; showMainUI(res.path); loadOverview() }
+}
+async function changeVault() {
+  const res = await window.api.selectVault()
+  if (res.success) {
+    currentVaultPath = res.path
+    document.getElementById('set-vault-path').textContent = res.path
+    loadOverview()
+  }
+}
+async function changeInbox() {
+  const res = await window.api.selectInbox()
+  if (res.success) { currentInboxPath = res.path; updateInboxUI(res.path) }
+}
+function updateInboxUI(p) {
+  const sv = document.getElementById('set-inbox-path'); sv.textContent = p; sv.classList.remove('empty')
+  const tip = document.getElementById('inbox-path-tip'); if (tip) tip.textContent = p
+  const hint = document.getElementById('note-inbox-hint'); if (hint) hint.textContent = '（' + p + '）'
+}
+function showMainUI(vaultPath) {
+  document.getElementById('page-welcome').classList.add('hidden')
+  document.getElementById('main-nav').classList.remove('hidden')
+  document.getElementById('refresh-btn').classList.remove('hidden')
+  document.getElementById('set-vault-path').textContent = vaultPath
+  showPage('overview')
+}
+function showPage(name) {
+  ['overview','import','search','new-note','tools','settings'].forEach(p => document.getElementById('page-'+p).classList.add('hidden'))
+  document.getElementById('page-'+name).classList.remove('hidden')
+  const pages = ['overview','import','search','new-note','tools','settings']
+  document.querySelectorAll('.nav-btn').forEach((btn,i) => btn.classList.toggle('active', pages[i] === name))
+  if (name === 'import') { loadFolders(); updateInboxTip() }
+  if (name === 'new-note') showPage_newNote()
+  if (name === 'search' && !tagCloudLoaded) loadTagCloud()
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn')
+  btn.classList.add('spinning')
+  btn.disabled = true
+  // 重新加载概览
+  await loadOverview()
+  // 如果当前在搜索页，重新加载标签云
+  tagCloudLoaded = false
+  const searchPage = document.getElementById('page-search')
+  if (!searchPage.classList.contains('hidden')) {
+    await loadTagCloud()
+  }
+  btn.classList.remove('spinning')
+  btn.disabled = false
+}
+
+/* ── 概览 ── */
+async function loadOverview() {
+  const res = await window.api.getVaultStats(currentVaultPath)
+  if (!res.success) return
+  const s = res.stats
+  document.getElementById('stat-md').textContent    = s.mdCount
+  document.getElementById('stat-pdf').textContent   = s.pdfCount
+  document.getElementById('stat-img').textContent   = s.imgCount
+  document.getElementById('stat-video').textContent = s.videoCount
+  document.getElementById('stat-other').textContent = s.otherCount
+  document.getElementById('folder-tree').innerHTML =
+    `<div class="virtual-folder" onclick="loadRecentFiles()">🕐 最近修改</div>` + buildTreeHTML(s.folderTree)
+  loadRecentFiles(s.recent)
+}
+
+let _cachedRecent = []
+async function loadFilesByType(type, label, cardEl) {
+  // 高亮选中的卡片，取消左侧树的选中
+  document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'))
+  cardEl.classList.add('active')
+  document.querySelectorAll('.tree-item.selected').forEach(e => e.classList.remove('selected'))
+
+  const el = document.getElementById('folder-files')
+  document.getElementById('folder-files-title').textContent = label
+  el.innerHTML = '<div class="loading">加载中...</div>'
+
+  const res = await window.api.listFilesByType({ vaultPath: currentVaultPath, type })
+  if (!res.success) { el.innerHTML = '<div class="empty-tip">读取失败</div>'; return }
+  if (!res.files.length) { el.innerHTML = `<div class="empty-tip">没有找到${label}</div>`; return }
+
+  el.innerHTML = `<div style="font-size:12px;color:#888780;margin-bottom:8px">共 ${res.files.length} 个文件</div>` +
+    res.files.map(f => {
+      const icon = fileIcon(f.name)
+      const isMd = f.name.endsWith('.md')
+      return `<div class="folder-file-item">
+        <span class="ff-icon">${icon}</span>
+        <span class="ff-name" title="${f.relativePath}">${f.name}</span>
+        <span class="ff-meta">${f.mtime}</span>
+        <span class="ff-actions">
+          <button class="ff-btn" onclick="openFile('${esc(f.path)}')">文件管理器</button>
+          ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+        </span>
+      </div>`
+    }).join('')
+}
+
+function loadRecentFiles(recent) {
+  if (recent) _cachedRecent = recent
+  const el = document.getElementById('folder-files')
+  document.getElementById('folder-files-title').textContent = '最近修改'
+  document.querySelectorAll('.tree-item.selected').forEach(e => e.classList.remove('selected'))
+  if (!_cachedRecent.length) { el.innerHTML = '<div class="empty-tip">暂无文件</div>'; return }
+  el.innerHTML = _cachedRecent.map(f => {
+    const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
+    return `<div class="folder-file-item">
+      <span class="ff-icon">${icon}</span>
+      <span class="ff-name" title="${f.relativePath}">${f.name}</span>
+      <span class="ff-meta">${f.mtime}</span>
+      <span class="ff-actions">
+        <button class="ff-btn" onclick="openFile('${esc(f.path)}')">访达</button>
+        ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+      </span>
+    </div>`
+  }).join('')
+}
+
+async function loadFolderFiles(folderPath, folderName) {
+  const el = document.getElementById('folder-files')
+  document.getElementById('folder-files-title').textContent = folderName
+  el.innerHTML = '<div class="loading">加载中...</div>'
+  const res = await window.api.listFolderFiles({ folderPath, vaultPath: currentVaultPath })
+  if (!res.success) { el.innerHTML = '<div class="empty-tip">读取失败</div>'; return }
+  if (!res.items.length) { el.innerHTML = '<div class="empty-tip">此文件夹为空</div>'; return }
+  el.innerHTML = res.items.map(f => {
+    if (f.isDir) return `<div class="folder-file-item"><span class="ff-icon">📁</span><span class="ff-name">${f.name}</span></div>`
+    const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
+    return `<div class="folder-file-item">
+      <span class="ff-icon">${icon}</span>
+      <span class="ff-name" title="${f.relativePath}">${f.name}</span>
+      <span class="ff-meta">${f.mtime}</span>
+      <span class="ff-actions">
+        <button class="ff-btn" onclick="openFile('${esc(f.path)}')">文件管理器</button>
+        ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+      </span>
+    </div>`
+  }).join('')
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  if (ext==='md') return '📝'; if (ext==='pdf') return '📄'
+  if (['png','jpg','jpeg','gif','webp'].includes(ext)) return '🖼️'
+  if (['mp4','mov','avi','mkv','webm'].includes(ext)) return '🎬'
+  if (['doc','docx'].includes(ext)) return '📃'; if (['xls','xlsx'].includes(ext)) return '📊'
+  if (['zip','rar','7z'].includes(ext)) return '🗜️'; return '📎'
+}
+
+/* ── 文件夹树 ── */
+function buildTreeHTML(node, depth) {
+  if (!node) return ''
+  depth = depth || 0
+  const hasKids = node.children && node.children.length > 0
+  const id = 'tn-' + Math.random().toString(36).slice(2)
+  const icon = depth === 0 ? '📚' : '📁'
+  const defaultCollapsed = depth >= 1
+  const toggleSymbol = defaultCollapsed ? '▶' : '▼'
+  const toggle = hasKids
+    ? `<span class="tree-toggle" onclick="event.stopPropagation();toggleTree('${id}')">${toggleSymbol}</span>`
+    : `<span class="tree-toggle"></span>`
+  const safeLabel = node.name.replace(/'/g,"\\'")
+  const safePath  = node.path.replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+  let html = `<div class="tree-item" onclick="selectTreeNode(this,'${id}','${safePath}','${safeLabel}')" style="padding-left:${depth*12}px">${toggle}<span>${icon} ${node.name}</span></div>`
+  if (hasKids) {
+    const collapsedClass = defaultCollapsed ? 'collapsed' : ''
+    html += `<div class="tree-children ${collapsedClass}" id="${id}">${node.children.map(c => buildTreeHTML(c, depth+1)).join('')}</div>`
+  }
+  return html
+}
+function toggleTree(id) {
+  const el = document.getElementById(id); if (!el) return
+  const collapsed = el.classList.toggle('collapsed')
+  const toggle = el.previousElementSibling.querySelector('.tree-toggle')
+  if (toggle) toggle.textContent = collapsed ? '▶' : '▼'
+}
+function selectTreeNode(el, id, folderPath, folderName) {
+  document.querySelectorAll('.tree-item.selected').forEach(e => e.classList.remove('selected'))
+  el.classList.add('selected')
+  const child = document.getElementById(id); if (child) toggleTree(id)
+  if (folderPath) loadFolderFiles(folderPath, folderName)
+}
+
+/* ── 标签云 ── */
+async function loadTagCloud() {
+  const res = await window.api.getTagStats(currentVaultPath)
+  const el = document.getElementById('tag-cloud')
+  if (!res.success || !res.tags.length) { el.innerHTML = '<div class="empty-tip">暂无标签</div>'; return }
+  tagCloudLoaded = true
+  const max = res.tags[0].count
+  const lgMin = Math.max(2, Math.ceil(max * 0.4)), mdMin = Math.max(1, Math.ceil(max * 0.15))
+  const lg = res.tags.filter(t => t.count >= lgMin)
+  const md = res.tags.filter(t => t.count >= mdMin && t.count < lgMin)
+  const sm = res.tags.filter(t => t.count < mdMin)
+  let html = ''
+  if (lg.length) html += renderTagGroup('常用标签', lg, 'size-lg')
+  if (md.length) html += renderTagGroup('其他标签', md, 'size-md')
+  if (sm.length) html += renderTagGroup('低频标签', sm, 'size-sm')
+  el.innerHTML = html
+}
+function renderTagGroup(label, tags, sizeClass) {
+  return `<div class="tag-group"><div class="tag-group-label">${label}（${tags.length}）</div>
+    <div class="tag-row">${tags.map(t => `<span class="tag-pill ${sizeClass}" onclick="searchByTag('${t.tag.replace(/'/g,"\\'")}',this)">#${t.tag}<span class="tag-count">${t.count}</span></span>`).join('')}</div></div>`
+}
+async function searchByTag(tag, el) {
+  document.querySelectorAll('.tag-pill').forEach(p => p.classList.remove('active'))
+  el.classList.add('active')
+  document.getElementById('search-input').value = '#' + tag
+  const resultsEl = document.getElementById('search-results')
+  resultsEl.innerHTML = '<div class="loading">查找中...</div>'
+  const res = await window.api.searchByTag({ vaultPath: currentVaultPath, tag })
+  if (!res.success) { resultsEl.innerHTML = '<div class="empty-tip">查找失败</div>'; return }
+  if (!res.results.length) { resultsEl.innerHTML = `<div class="empty-tip">没有找到含有标签 #${tag} 的笔记</div>`; return }
+  resultsEl.innerHTML = `<div class="result-count">标签 #${tag} 共 ${res.results.length} 篇笔记</div>` +
+    res.results.map(r => `<div class="result-item">
+      <div class="result-name">📝 ${r.name}</div><div class="result-path">${r.relativePath}</div>
+      <div class="result-actions">
+        <button onclick="openFile('${esc(r.path)}')">📂 文件管理器</button>
+        <button class="obs-btn" onclick="openInObsidian('${esc(r.path)}')">🟣 Obsidian</button>
+      </div></div>`).join('')
+}
+function toggleTagCloud() {
+  const wrap = document.getElementById('tag-cloud-wrap'), btn = document.getElementById('tag-toggle-btn')
+  btn.textContent = wrap.classList.toggle('collapsed') ? '展开 ▼' : '收起 ▲'
+}
+
+/* ── 搜索筛选 ── */
+function toggleType(type, el) {
+  const chips = document.querySelectorAll('#type-chips .chip')
+  if (type === 'all') {
+    chips.forEach(c => c.classList.remove('active'))
+    el.classList.add('active')
+  } else {
+    document.querySelector('#type-chips .chip[data-type="all"]').classList.remove('active')
+    el.classList.toggle('active')
+    const anyActive = [...chips].some(c => c.classList.contains('active'))
+    if (!anyActive) document.querySelector('#type-chips .chip[data-type="all"]').classList.add('active')
+  }
+  doSearch()
+}
+
+function getSelectedTypes() {
+  const chips = document.querySelectorAll('#type-chips .chip.active')
+  const types = [...chips].map(c => c.dataset.type)
+  if (types.includes('all') || types.length === 0) return ['all']
+  return types
+}
+
+function resetFilters() {
+  document.querySelectorAll('#type-chips .chip').forEach(c => c.classList.remove('active'))
+  document.querySelector('#type-chips .chip[data-type="all"]').classList.add('active')
+  document.getElementById('date-from').value = ''
+  document.getElementById('date-to').value = ''
+  document.getElementById('sort-select').value = 'relevance'
+  document.getElementById('search-input').value = ''
+  document.getElementById('search-results').innerHTML = '<div class="empty-tip">筛选条件已重置</div>'
+}
+
+/* ── 搜索 ── */
+async function doSearch() {
+  const query     = document.getElementById('search-input').value.trim()
+  const fileTypes = getSelectedTypes()
+  const dateFrom  = document.getElementById('date-from').value
+  const dateTo    = document.getElementById('date-to').value
+  const sortBy    = document.getElementById('sort-select').value
+
+  if (!query && fileTypes.includes('all') && !dateFrom && !dateTo) {
+    document.getElementById('search-results').innerHTML = '<div class="empty-tip">输入关键词或设置筛选条件后点击搜索</div>'
+    return
+  }
+  const el = document.getElementById('search-results')
+  el.innerHTML = '<div class="loading">搜索中...</div>'
+  const res = await window.api.searchFiles({ vaultPath: currentVaultPath, query, fileTypes, dateFrom, dateTo, sortBy })
+  if (!res.success) { el.innerHTML = '<div class="empty-tip">搜索出错</div>'; return }
+  if (!res.results.length) { el.innerHTML = '<div class="empty-tip">没有找到符合条件的文件</div>'; return }
+  const countTip = res.total > res.results.length
+    ? `找到 ${res.total} 个结果，显示前 ${res.results.length} 个`
+    : `找到 ${res.total} 个结果`
+  el.innerHTML = `<div class="result-count">${countTip}</div>` +
+    res.results.map(r => {
+      const icon = fileIcon(r.fullName || r.name)
+      const isMd = r.ext === '.md'
+      return `<div class="result-item">
+        <div class="result-name">${icon} ${r.name}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+          <div class="result-path">${r.relativePath}</div>
+          <span style="font-size:11px;color:#b4b2a9">${r.mtime}</span>
+        </div>
+        ${r.snippet ? `<div class="result-snippet">${r.snippet}</div>` : ''}
+        <div class="result-actions">
+          <button onclick="openFile('${esc(r.path)}')">📂 文件管理器</button>
+          ${isMd ? `<button class="obs-btn" onclick="openInObsidian('${esc(r.path)}')">🟣 Obsidian</button>` : ''}
+        </div>
+      </div>`
+    }).join('')
+}
+
+/* ── 导入 ── */
+function updateInboxTip() {
+  const tip = document.getElementById('inbox-path-tip')
+  if (tip && currentInboxPath) tip.textContent = currentInboxPath
+}
+async function loadFolders() {
+  if (!currentVaultPath) return
+  const res = await window.api.getVaultFolders(currentVaultPath); if (!res.success) return
+  document.getElementById('folder-select').innerHTML = res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
+  updateInboxTip()
+}
+async function loadInboxFiles() {
+  if (!currentInboxPath) { alert('请先在「设置」页面设置待处理文件库路径'); return }
+  const res = await window.api.listInboxFiles(currentInboxPath)
+  if (!res.success) { alert('读取失败：' + res.error); return }
+  if (!res.files.length) { alert('待处理文件库中没有文件'); return }
+  addFiles(res.files.map(f => f.path))
+}
+async function pickFiles() { const files = await window.api.selectImportFiles(); if (files.length) addFiles(files) }
+function addFiles(files) { files.forEach(f => { if (!pendingFiles.includes(f)) pendingFiles.push(f) }); renderImportList() }
+function renderImportList() {
+  const listEl = document.getElementById('import-file-list'), actEl = document.getElementById('import-actions')
+  document.getElementById('import-result').classList.add('hidden')
+  if (!pendingFiles.length) { listEl.classList.add('hidden'); actEl.classList.add('hidden'); return }
+  listEl.classList.remove('hidden'); actEl.classList.remove('hidden')
+  listEl.innerHTML = pendingFiles.map((f,i) => `<div class="import-file-item">
+    <span style="flex:1">${f.split(/[\\/]/).pop()}</span>
+    <span style="font-size:11px;color:#b4b2a9;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f}</span>
+    <button class="remove-btn" onclick="removeFile(${i})">×</button>
+  </div>`).join('')
+}
+function removeFile(i) { pendingFiles.splice(i,1); renderImportList() }
+async function doImport() {
+  const targetDir = document.getElementById('folder-select').value
+  const res = await window.api.importFiles({ files: pendingFiles, targetDir })
+  const ok = res.filter(r => r.success).length, fail = res.filter(r => !r.success).length
+  const resultEl = document.getElementById('import-result')
+  resultEl.className = 'import-result ' + (fail ? 'error' : 'success')
+  resultEl.innerHTML = `成功导入 ${ok} 个文件${fail ? `，${fail} 个失败` : ''}。`
+  resultEl.classList.remove('hidden')
+  pendingFiles = []; renderImportList(); loadOverview()
+}
+function handleDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over') }
+function handleDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over') }
+function handleDrop(e) {
+  e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag-over')
+  addFiles(Array.from(e.dataTransfer.files).map(f => f.path))
+}
+
+/* ── 重复文件 & 空文件清理 ── */
+async function runDuplicates() {
+  const el = document.getElementById('duplicate-result')
+  el.innerHTML = '<div class="loading">扫描中...</div>'
+  const res = await window.api.checkDuplicates(currentVaultPath)
+  if (!res.success) { el.innerHTML = '<div class="empty-tip">扫描失败</div>'; return }
+  if (!res.duplicates.length) { el.innerHTML = '<div class="empty-tip">✅ 没有发现重复文件。</div>'; return }
+  const total = res.duplicates.reduce((s, g) => s + g.length, 0)
+  el.innerHTML = `<div style="font-size:13px;color:#888780;margin-bottom:10px">发现 ${res.duplicates.length} 组重复文件（共 ${total} 个），同组内文件名和大小完全相同</div>` +
+    res.duplicates.map((group, gi) => `
+      <div style="background:#fafaf8;border:1px solid #e0dfd8;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-size:12px;color:#888780;margin-bottom:6px">第 ${gi+1} 组 · ${group[0].name} · ${formatSize(group[0].size)}</div>
+        ${group.map(f => `<div class="check-item" style="padding:5px 0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;color:#444441;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.relativePath}</div>
+            <div style="font-size:11px;color:#b4b2a9">${f.mtime}</div>
+          </div>
+          <button class="open-btn" style="flex-shrink:0" onclick="openFile('${esc(f.path)}')">打开</button>
+          <button class="open-btn" style="flex-shrink:0;color:#e24b4a" onclick="confirmDelete('${esc(f.path)}', this)">删除</button>
+        </div>`).join('')}
+      </div>`).join('')
+}
+
+async function runEmptyFiles() {
+  const el = document.getElementById('empty-result')
+  el.innerHTML = '<div class="loading">扫描中...</div>'
+  const res = await window.api.checkEmptyFiles(currentVaultPath)
+  if (!res.success) { el.innerHTML = '<div class="empty-tip">扫描失败</div>'; return }
+  if (!res.empty.length) { el.innerHTML = '<div class="empty-tip">✅ 没有发现空文件。</div>'; return }
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <span style="font-size:13px;color:#888780">发现 ${res.empty.length} 个空文件</span>
+    <button class="btn-sm" style="color:#e24b4a;border-color:#f5b8b8" onclick="deleteAllEmpty()">全部删除</button>
+  </div>` +
+    res.empty.map(f => `<div class="check-item">
+      <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#f1efe8;color:#888780;flex-shrink:0">${f.ext || '空'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</div>
+        <div style="font-size:12px;color:#888780">${f.relativePath}</div>
+      </div>
+      <button class="open-btn" style="flex-shrink:0" onclick="openFile('${esc(f.path)}')">打开</button>
+      <button class="open-btn" style="flex-shrink:0;color:#e24b4a" onclick="confirmDelete('${esc(f.path)}', this)">删除</button>
+    </div>`).join('')
+}
+
+async function confirmDelete(filePath, btn) {
+  if (!confirm(`确定要删除这个文件吗？\n${filePath}\n\n文件会移到系统回收站，可以从回收站恢复。`)) return
+  const res = await window.api.deleteFile(filePath)
+  if (res.success) {
+    btn.closest('.check-item, div[style*="background:#fafaf8"]')?.remove()
+    loadOverview()
+  } else {
+    alert('删除失败：' + res.error)
+  }
+}
+
+async function deleteAllEmpty() {
+  const items = document.querySelectorAll('#empty-result .check-item')
+  if (!items.length) return
+  if (!confirm(`确定要删除全部 ${items.length} 个空文件吗？\n文件会移到系统回收站，可以从回收站恢复。`)) return
+  const btns = document.querySelectorAll('#empty-result .open-btn[style*="#e24b4a"]')
+  let done = 0
+  for (const btn of btns) {
+    const pathMatch = btn.getAttribute('onclick').match(/confirmDelete\('(.+?)',/)
+    if (pathMatch) {
+      const fp = pathMatch[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\')
+      const res = await window.api.deleteFile(fp)
+      if (res.success) done++
+    }
+  }
+  document.getElementById('empty-result').innerHTML = `<div class="empty-tip">✅ 已删除 ${done} 个空文件，已移入系统回收站。</div>`
+  loadOverview()
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+/* ── 新建笔记 ── */
+function showPage_newNote() {
+  const hint = document.getElementById('note-inbox-hint')
+  if (hint) hint.textContent = currentInboxPath ? '（' + currentInboxPath + '）' : '（未设置待处理文件库，将保存到知识库根目录）'
+  document.getElementById('note-result').classList.add('hidden')
+  document.getElementById('note-move-section').classList.add('hidden')
+  document.getElementById('note-move-result').classList.add('hidden')
+  document.getElementById('note-body').value = ''
+  document.getElementById('note-title').value = ''
+  lastCreatedNotePath = null
+}
+async function loadNoteFolders() {
+  if (!currentVaultPath) return
+  const res = await window.api.getVaultFolders(currentVaultPath); if (!res.success) return
+  document.getElementById('note-folder-select').innerHTML = res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
+}
+function selectTemplate(name, el) {
+  currentTemplate = name
+  document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'))
+  el.classList.add('selected')
+  const ti = document.getElementById('note-title')
+  const today = new Date().toISOString().slice(0, 10)
+  if (name === 'daily') {
+    ti.value = today
+    ti.disabled = true
+  } else if (name === 'meeting') {
+    ti.value = ''
+    ti.disabled = false
+    ti.placeholder = `会议标题（选填，留空将命名为"会议记录 ${today}"）`
+  } else if (name === 'book') {
+    ti.value = ''
+    ti.disabled = false
+    ti.placeholder = '书名（选填）'
+  } else {
+    ti.value = ''
+    ti.disabled = false
+    ti.placeholder = '标题（选填，留空自动命名）'
+  }
+}
+async function doCreateNote() {
+  const title = document.getElementById('note-title').value.trim()
+  const body  = document.getElementById('note-body').value.trim()
+  const targetDir = currentInboxPath || currentVaultPath
+  const res = await window.api.createNote({ vaultPath: currentVaultPath, targetDir, title, template: currentTemplate, body })
+  const el = document.getElementById('note-result'); el.classList.remove('hidden')
+  if (res.success) {
+    lastCreatedNotePath = res.path
+    const dest = currentInboxPath ? '待处理文件库' : '知识库根目录'
+    el.className = 'import-result success'
+    // 保存在待处理文件库时只显示"文件管理器"，保存在知识库时才能用 Obsidian 打开
+    const openBtn = currentInboxPath
+      ? `<button class="open-btn" style="margin-left:8px" onclick="openFile('${esc(res.path)}')">📂 文件管理器查看</button>`
+      : `<button class="open-btn" style="margin-left:8px" onclick="openInObsidian('${esc(res.path)}')">🟣 在 Obsidian 中打开</button>`
+    el.innerHTML = `✅ 笔记已保存到${dest}。${openBtn}`
+    document.getElementById('note-title').value = ''; document.getElementById('note-body').value = ''
+    document.getElementById('note-move-section').classList.remove('hidden')
+    loadNoteFolders(); loadOverview()
+  } else { el.className = 'import-result error'; el.innerHTML = '❌ 保存失败：' + res.error }
+}
+async function doMoveNote() {
+  if (!lastCreatedNotePath) return
+  const targetDir = document.getElementById('note-folder-select').value
+  const res = await window.api.moveNote({ srcPath: lastCreatedNotePath, targetDir })
+  const el = document.getElementById('note-move-result'); el.classList.remove('hidden')
+  if (res.success) {
+    lastCreatedNotePath = res.path; el.className = 'import-result success'
+    el.innerHTML = `✅ 已移入知识库。<button class="open-btn" style="margin-left:8px" onclick="openInObsidian('${esc(res.path)}')">在 Obsidian 中打开</button>`
+    loadOverview()
+  } else { el.className = 'import-result error'; el.innerHTML = '❌ 移动失败：' + res.error }
+}
+
+/* ── 工具函数 ── */
+function openFile(p) { window.api.openFile(p) }
+function openInObsidian(p) { window.api.openInObsidian(p) }
+function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
+</script>
+</body>
+</html>

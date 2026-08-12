@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-manager",
+  "version": "1.0.0",
+  "description": "Obsidian 知识库管理工具",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.obsidian.manager",
+    "productName": "Obsidian管理工具",
+    "directories": { "output": "dist" },
+    "mac": { "target": "dmg", "category": "public.app-category.productivity" },
+    "win": { "target": "nsis" }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "chokidar": "^3.5.3"
+  }
+}
