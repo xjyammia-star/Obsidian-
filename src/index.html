@@ -424,31 +424,40 @@
         <div class="section-title" style="margin:0">📁 知识库内容分析</div>
         <span style="font-size:12px;color:#888780" id="ai-analyze-file-count"></span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-        <div>
-          <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">选择要分析的文件夹</div>
-          <select id="analyze-folder-select" style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;" onchange="onAnalyzeFolderChange()">
-            <option value="">请先选择文件夹...</option>
-          </select>
+      <div style="display:grid;grid-template-columns:200px 1fr;border:1px solid #d3d1c7;border-radius:8px;overflow:hidden;height:280px;margin-bottom:8px">
+        <div style="border-right:1px solid #d3d1c7;overflow-y:auto;background:#f5f4f0">
+          <div style="padding:7px 12px;font-size:11px;color:#888780;font-weight:500;border-bottom:1px solid #d3d1c7;letter-spacing:.3px">文件夹</div>
+          <div id="analyze-folder-tree" style="padding:4px 0"></div>
         </div>
-        <div>
-          <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">快捷示例（点击填入）</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <span class="chip" onclick="fillPrompt(this)">生成知识分析报告</span>
-            <span class="chip" onclick="fillPrompt(this)">内容汇总精华</span>
-            <span class="chip" onclick="fillPrompt(this)">写一篇扩展论文</span>
-            <span class="chip" onclick="fillPrompt(this)">推荐学习路径</span>
-            <span class="chip" onclick="fillPrompt(this)">找出知识空缺</span>
+        <div style="display:flex;flex-direction:column;overflow:hidden;background:#fff">
+          <div style="padding:7px 12px;font-size:11px;color:#888780;font-weight:500;border-bottom:1px solid #d3d1c7;display:flex;align-items:center;justify-content:space-between">
+            <span id="analyze-folder-label">请先选择文件夹</span>
+            <span style="display:flex;gap:8px">
+              <span onclick="analyzeCheckAll(true)" style="cursor:pointer;color:#6c63d4;font-size:11px">全选</span>
+              <span style="color:#d3d1c7">|</span>
+              <span onclick="analyzeCheckAll(false)" style="cursor:pointer;color:#888780;font-size:11px">取消</span>
+            </span>
+          </div>
+          <div id="analyze-file-list" style="overflow-y:auto;flex:1;padding:4px 0">
+            <div style="padding:20px;text-align:center;color:#b4b2a9;font-size:13px">← 点击左侧文件夹查看笔记</div>
           </div>
         </div>
       </div>
-      <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#888780;margin-bottom:14px" id="analyze-selected-count">尚未选择文件</div>
+      <div style="margin-bottom:10px">
         <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">告诉 AI 你想要什么</div>
-        <textarea id="analyze-prompt" rows="3" placeholder="例如：帮我生成一份知识分析报告，梳理核心观点和知识结构&#10;或者：把这些笔记整合成一篇完整的文章&#10;或者：找出这个主题的知识空缺，推荐我下一步学什么" style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.7;"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          <span class="chip" onclick="fillPrompt(this)">生成知识分析报告</span>
+          <span class="chip" onclick="fillPrompt(this)">内容汇总精华</span>
+          <span class="chip" onclick="fillPrompt(this)">写一篇扩展论文</span>
+          <span class="chip" onclick="fillPrompt(this)">推荐学习路径</span>
+          <span class="chip" onclick="fillPrompt(this)">找出知识空缺</span>
+        </div>
+        <textarea id="analyze-prompt" rows="3" placeholder="例如：帮我生成一份知识分析报告&#10;或者：把这些笔记整合成一篇完整的文章" style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.7;box-sizing:border-box"></textarea>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
         <button class="btn-primary" onclick="doAnalyzeFolder()" id="btn-analyze">开始分析</button>
-        <div id="analyze-progress" style="font-size:13px;color:#888780;"></div>
+        <div id="analyze-progress" style="font-size:13px;color:#888780"></div>
       </div>
       <div id="analyze-result" class="hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -458,7 +467,7 @@
             <button class="btn-sm green" onclick="saveAnalyzeResult()">保存为笔记</button>
           </div>
         </div>
-        <div id="analyze-result-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto;"></div>
+        <div id="analyze-result-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto"></div>
         <div id="analyze-save-result" class="import-result hidden" style="margin-top:8px"></div>
       </div>
     </div>
@@ -1038,7 +1047,7 @@ function handleDragOver(e) { e.preventDefault(); document.getElementById('drop-z
 function handleDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over') }
 function handleDrop(e) {
   e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag-over')
-  addFiles(Array.from(e.dataTransfer.files).map(f => f.path))
+  console.log('[RENDER] handleDrop fired, files:', e.dataTransfer ? e.dataTransfer.files.length : 0)
 }
 
 /* ── 重复文件 & 空文件清理 ── */
@@ -1198,11 +1207,58 @@ let analyzeFolderPath = ''
 
 async function loadAnalyzeFolders() {
   if (!currentVaultPath) return
-  const res = await window.api.getVaultFolders(currentVaultPath)
+  const res = await window.api.getFolderTree(currentVaultPath)
   if (!res.success) return
-  const sel = document.getElementById('analyze-folder-select')
-  sel.innerHTML = '<option value="">请选择文件夹...</option>' +
-    res.folders.map(f => '<option value="' + f.value + '">' + f.label + '</option>').join('')
+  const treeEl = document.getElementById('analyze-folder-tree')
+  treeEl.innerHTML = ''
+  renderAnalyzeTree(res.tree, treeEl)
+}
+
+function renderAnalyzeTree(node, container) {
+  const indent = node.depth * 12
+  const row = document.createElement('div')
+  row.style.cssText = 'padding:6px 12px 6px ' + (12 + indent) + 'px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;border-bottom:1px solid #f0efe8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
+  row.title = node.name
+  row.innerHTML = '<span style="font-size:13px">📁</span><span style="overflow:hidden;text-overflow:ellipsis">' + node.name + '</span>'
+  row.onclick = function() {
+    document.querySelectorAll('#analyze-folder-tree div').forEach(function(d) { d.style.background = ''; d.style.color = '' })
+    row.style.background = '#ebe9fa'; row.style.color = '#534AB7'
+    loadAnalyzeFolderFiles(node.path, node.name)
+  }
+  container.appendChild(row)
+  if (node.children) node.children.forEach(function(child) { renderAnalyzeTree(child, container) })
+}
+
+async function loadAnalyzeFolderFiles(folderPath, folderName) {
+  document.getElementById('analyze-folder-label').textContent = folderName + ' 的笔记'
+  const listEl = document.getElementById('analyze-file-list')
+  listEl.innerHTML = '<div style="padding:12px;text-align:center;color:#b4b2a9;font-size:13px">加载中...</div>'
+  const res = await window.api.getFolderMdFiles(folderPath)
+  if (!res.success || !res.files.length) {
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#b4b2a9;font-size:13px">该文件夹下没有笔记</div>'
+    updateAnalyzeCount(); return
+  }
+  listEl.innerHTML = res.files.map(function(f) {
+    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f5f4f0">'+
+      '<input type="checkbox" checked data-path="' + esc(f.path) + '" onchange="updateAnalyzeCount()" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;accent-color:#6c63d4">'+
+      '<span style="color:#5f5e5a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(f.name) + '">' + f.name.replace(/\.md$/, '') + '</span>'+
+      '<span style="color:#b4b2a9;font-size:11px;flex-shrink:0">' + f.mtime + '</span>'+
+    '</label>'
+  }).join('')
+  updateAnalyzeCount()
+}
+
+function analyzeCheckAll(v) {
+  document.querySelectorAll('#analyze-file-list input[type=checkbox]').forEach(function(c) { c.checked = v })
+  updateAnalyzeCount()
+}
+
+function updateAnalyzeCount() {
+  const total = document.querySelectorAll('#analyze-file-list input[type=checkbox]').length
+  const checked = document.querySelectorAll('#analyze-file-list input[type=checkbox]:checked').length
+  const el = document.getElementById('analyze-selected-count')
+  if (total === 0) { el.textContent = '尚未选择文件'; return }
+  el.textContent = '已选 ' + checked + ' / ' + total + ' 篇笔记'
 }
 
 function onAnalyzeFolderChange() {
@@ -1217,9 +1273,10 @@ function fillPrompt(el) {
 }
 
 async function doAnalyzeFolder() {
-  const folderPath = document.getElementById('analyze-folder-select').value
+  const checkedBoxes = document.querySelectorAll('#analyze-file-list input[type=checkbox]:checked')
+  const filePaths = Array.from(checkedBoxes).map(function(c) { return c.getAttribute('data-path') })
   const userPrompt = document.getElementById('analyze-prompt').value.trim()
-  if (!folderPath) { alert('请先选择要分析的文件夹'); return }
+  if (!filePaths.length) { alert('请先在左侧选择要分析的笔记'); return }
   if (!userPrompt) { alert('请先告诉 AI 你想要什么'); return }
 
   const btn = document.getElementById('btn-analyze')
@@ -1243,7 +1300,7 @@ async function doAnalyzeFolder() {
     }
   })
 
-  const res = await window.api.aiAnalyzeFolder({ folderPath, userPrompt })
+  const res = await window.api.aiAnalyzeFolder({ filePaths, userPrompt })
   window.api.offAnalyzeProgress()
 
   btn.disabled = false; btn.textContent = '开始分析'
@@ -1299,6 +1356,11 @@ async function saveAnalyzeResult() {
     saveEl.textContent = '❌ 保存失败：' + e.message
   }
 }
+
+window.api.onFilesDropped(function(paths) {
+  console.log('[RENDER] onFilesDropped called, paths:', paths)
+  if (paths && paths.length) addExtraFiles(paths)
+})
 
 /* ── 工具函数 ── */
 function openFile(p) { window.api.openFile(p) }
