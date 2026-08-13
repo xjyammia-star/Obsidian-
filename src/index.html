@@ -906,12 +906,20 @@ async function doSearch() {
 /* ── 导入 ── */
 let aiClassifyEnabled = false
 
-async function loadFolders() {
+let _foldersCache = null
+let _foldersCacheVault = null
+
+async function loadFolders(forceRefresh) {
   if (!currentVaultPath) return
+  if (!forceRefresh && _foldersCache && _foldersCacheVault === currentVaultPath) {
+    document.getElementById('folder-select').innerHTML = _foldersCache
+    return
+  }
   const res = await window.api.getVaultFolders(currentVaultPath)
   if (!res.success) return
-  document.getElementById('folder-select').innerHTML =
-    res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
+  _foldersCache = res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
+  _foldersCacheVault = currentVaultPath
+  document.getElementById('folder-select').innerHTML = _foldersCache
   const settings = await window.api.getAiSettings()
   aiClassifyEnabled = settings.aiClassifyEnabled || false
   const hint = document.getElementById('ai-classify-hint')

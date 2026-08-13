@@ -216,7 +216,6 @@ ipcMain.handle('select-import-files', async () => {
 
 // ── 知识库文件夹列表 ──
 ipcMain.handle('get-vault-folders', async (event, vaultPath) => {
-  console.log('[IPC] get-vault-folders called at', Date.now())
   try { return { success: true, folders: getFolders(vaultPath, vaultPath) } }
   catch (err) { return { success: false, error: err.message } }
 })
@@ -297,7 +296,6 @@ ipcMain.handle('resolve-dropped-files', async (event, fileInfos) => {
     }
     if (found) results.push(found)
   }
-  console.log('[MAIN] resolve result:', results)
   return results
 })
 
@@ -403,7 +401,6 @@ ipcMain.handle('get-inbox-path', () => store.get('inboxPath', null))
 
 // ── 列出待处理文件库文件 ──
 ipcMain.handle('list-inbox-files', async (event, inboxPath) => {
-  console.log('[IPC] list-inbox-files called at', Date.now())
   try {
     const files = []
     for (const item of fs.readdirSync(inboxPath)) {
@@ -482,7 +479,6 @@ ipcMain.handle('delete-file', async (event, filePath) => {
 
 // ── 标签统计（只读 frontmatter，不扫正文）──
 ipcMain.handle('get-tag-stats', async (event, vaultPath) => {
-  console.log('[IPC] get-tag-stats called at', Date.now())
   try {
     const allMdFiles = getAllFiles(vaultPath, '.md')
     const tagCount = {}
