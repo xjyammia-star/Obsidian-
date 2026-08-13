@@ -1,25 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { webUtils } = require('electron')
+const { webUtils } = require('electron/renderer')
 
 // preload 层监听 drop，获取真实路径后通过 ipcRenderer 发回渲染进程
 window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('drop', (e) => {
-    console.log('[DROP] event fired, files:', e.dataTransfer ? e.dataTransfer.files.length : 'no dataTransfer')
     if (!e.dataTransfer || !e.dataTransfer.files.length) return
     const paths = Array.from(e.dataTransfer.files).map(f => {
-      try {
-        const p = webUtils.getPathForFile(f)
-        console.log('[DROP] got path:', p)
-        return p
-      } catch (err) {
-        console.log('[DROP] getPathForFile error:', err.message)
-        return null
-      }
+      try { return webUtils.getPathForFile(f) } catch (_) { return null }
     }).filter(Boolean)
-    console.log('[DROP] sending paths:', paths)
-    if (paths.length > 0) {
-      ipcRenderer.send('renderer-files-dropped', paths)
-    }
+    if (paths.length > 0) ipcRenderer.send('renderer-files-dropped', paths)
   }, true)
 
   ipcRenderer.on('files-dropped-reply', (_e, paths) => {

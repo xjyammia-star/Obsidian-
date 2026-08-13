@@ -1047,7 +1047,6 @@ function handleDragOver(e) { e.preventDefault(); document.getElementById('drop-z
 function handleDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over') }
 function handleDrop(e) {
   e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag-over')
-  console.log('[RENDER] handleDrop fired, files:', e.dataTransfer ? e.dataTransfer.files.length : 0)
 }
 
 /* ── 重复文件 & 空文件清理 ── */
@@ -1358,7 +1357,6 @@ async function saveAnalyzeResult() {
 }
 
 window.api.onFilesDropped(function(paths) {
-  console.log('[RENDER] onFilesDropped called, paths:', paths)
   if (paths && paths.length) addExtraFiles(paths)
 })
 
