@@ -42,7 +42,7 @@
     .refresh-btn:hover { background: #f1efe8; border-color: #888780; }
     .refresh-btn.spinning .refresh-icon { display: inline-block; animation: spin 0.7s linear infinite; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+    .main { flex: 1; overflow-y: auto; padding: 20px 28px; isolation: isolate; }
     .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; text-align: center; }
     .welcome h2 { font-size: 22px; font-weight: 500; }
     .welcome p { font-size: 14px; color: #888780; max-width: 320px; line-height: 1.7; }
@@ -162,7 +162,7 @@
     .settings-section { background: #fff; border: 1px solid #e0dfd8; border-radius: 12px; padding: 4px 20px; margin-bottom: 12px; }
     .settings-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f1efe8; }
     .settings-row:last-child { border-bottom: none; }
-    .settings-label { font-size: 14px; font-weight: 500; min-width: 110px; }
+    .settings-label { font-size: 14px; font-weight: 500; min-width: 120px; }
     .settings-value { flex: 1; font-size: 13px; color: #5f5e5a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .settings-value.empty { color: #b4b2a9; }
     /* Toggle 开关 */
@@ -337,7 +337,6 @@
       <span style="font-size:13px;color:#888780">点击选择文件，或将文件拖放到此处</span>
     </div>
     <div id="import-file-list" class="import-file-list hidden" style="margin-top:6px"></div>
-  </div>
   </div>
 
   <!-- 已处理提示栏（常驻显示）-->
@@ -576,6 +575,11 @@ let tagCloudLoaded = false, cachedRecent = []
 let lastCreatedNotePath = null
 
 window.addEventListener('DOMContentLoaded', async () => {
+  // 初始化时强制隐藏所有页面
+  ;['overview','import','search','new-note','tools','ai','settings'].forEach(p => {
+    const el = document.getElementById('page-'+p)
+    if (el) { el.style.display = 'none'; el.classList.add('hidden') }
+  })
   const vault = await window.api.getVaultPath()
   const inbox = await window.api.getInboxPath()
   if (inbox) { currentInboxPath = inbox; updateInboxUI(inbox) }
@@ -611,8 +615,12 @@ function showMainUI(vaultPath) {
   showPage('overview')
 }
 function showPage(name) {
-  ['overview','import','search','new-note','tools','ai','settings'].forEach(p => document.getElementById('page-'+p).classList.add('hidden'))
-  document.getElementById('page-'+name).classList.remove('hidden')
+  ['overview','import','search','new-note','tools','ai','settings'].forEach(p => {
+    const el = document.getElementById('page-'+p)
+    if (el) { el.style.display = 'none'; el.classList.add('hidden') }
+  })
+  const current = document.getElementById('page-'+name)
+  if (current) { current.style.display = ''; current.classList.remove('hidden') }
   const pages = ['overview','import','search','new-note','tools','ai','settings']
   document.querySelectorAll('.nav-btn').forEach((btn,i) => btn.classList.toggle('active', pages[i] === name))
   if (name === 'import') {
@@ -806,13 +814,16 @@ async function searchByTag(tag, el) {
   const res = await window.api.searchByTag({ vaultPath: currentVaultPath, tag })
   if (!res.success) { resultsEl.innerHTML = '<div class="empty-tip">查找失败</div>'; return }
   if (!res.results.length) { resultsEl.innerHTML = `<div class="empty-tip">没有找到含有标签 #${tag} 的笔记</div>`; return }
-  resultsEl.innerHTML = `<div class="result-count">标签 #${tag} 共 ${res.results.length} 篇笔记</div>` +
-    res.results.map(r => `<div class="result-item">
-      <div class="result-name">📝 ${r.name}</div><div class="result-path">${r.relativePath}</div>
-      <div class="result-actions">
-        <button onclick="openFile('${esc(r.path)}')">📂 文件管理器</button>
-        <button class="obs-btn" onclick="openInObsidian('${esc(r.path)}')">🟣 Obsidian</button>
-      </div></div>`).join('')
+  resultsEl.innerHTML = `<div class="result-count">标签 #${tag} 的 ${res.results.length} 篇笔记</div>` +
+    res.results.map(r => `<div class="result-item" style="display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div class="result-name">📄 ${r.name}</div>
+        <div class="result-path" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.relativePath}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="openFile(${JSON.stringify(r.path)})">📂 文件管理器</button>
+        <button class="obs-btn" onclick="openInObsidian(${JSON.stringify(r.path)})">📖 Obsidian</button>
+      </div></div>`).join("")
 }
 function toggleTagCloud() {
   const wrap = document.getElementById('tag-cloud-wrap'), btn = document.getElementById('tag-toggle-btn')
@@ -875,16 +886,18 @@ async function doSearch() {
     res.results.map(r => {
       const icon = fileIcon(r.fullName || r.name)
       const isMd = r.ext === '.md'
-      return `<div class="result-item">
-        <div class="result-name">${icon} ${r.name}</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-          <div class="result-path">${r.relativePath}</div>
-          <span style="font-size:11px;color:#b4b2a9">${r.mtime}</span>
+      return `<div class="result-item" style="display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div class="result-name">${icon} ${r.name}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+            <div class="result-path" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.relativePath}</div>
+            <span style="font-size:11px;color:#b4b2a9;flex-shrink:0">${r.mtime}</span>
+          </div>
+          ${r.snippet ? `<div class="result-snippet">${r.snippet}</div>` : ""}
         </div>
-        ${r.snippet ? `<div class="result-snippet">${r.snippet}</div>` : ''}
-        <div class="result-actions">
-          <button onclick="openFile('${esc(r.path)}')">📂 文件管理器</button>
-          ${isMd ? `<button class="obs-btn" onclick="openInObsidian('${esc(r.path)}')">🟣 Obsidian</button>` : ''}
+        <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;padding-top:2px">
+          <button onclick="openFile(${JSON.stringify(r.path)})">📂 文件管理器</button>
+          ${isMd ? `<button class="obs-btn" onclick="openInObsidian(${JSON.stringify(r.path)})">📖 Obsidian</button>` : ""}
         </div>
       </div>`
     }).join('')
