@@ -56,6 +56,7 @@ ipcMain.handle('get-vault-path', () => store.get('vaultPath', null))
 
 // ── 知识库统计 ──
 ipcMain.handle('get-vault-stats', async (event, vaultPath) => {
+  console.log('[IPC] get-vault-stats called at', Date.now())
   try { return { success: true, stats: scanDirectory(vaultPath) } }
   catch (err) { return { success: false, error: err.message } }
 })
@@ -215,6 +216,7 @@ ipcMain.handle('select-import-files', async () => {
 
 // ── 知识库文件夹列表 ──
 ipcMain.handle('get-vault-folders', async (event, vaultPath) => {
+  console.log('[IPC] get-vault-folders called at', Date.now())
   try { return { success: true, folders: getFolders(vaultPath, vaultPath) } }
   catch (err) { return { success: false, error: err.message } }
 })
@@ -233,9 +235,14 @@ ipcMain.handle('get-folder-md-files', async (event, folderPath) => {
     for (const item of fs.readdirSync(folderPath)) {
       if (item.startsWith('.')) continue
       const full = path.join(folderPath, item)
-      const stat = fs.statSync(full)
+      const stat = fs.lstatSync(full)
       if (!stat.isDirectory() && path.extname(item).toLowerCase() === '.md') {
         files.push({ name: item, path: full, mtime: stat.mtime.toISOString().slice(0,10) })
+      }
+      // 显示 iCloud 占位符中的 .md 文件（未下载）
+      if (item.endsWith('.icloud') && item.includes('.md')) {
+        const realName = item.replace(/^\./, '').replace(/\.icloud$/, '')
+        files.push({ name: realName, path: full, mtime: '', cloud: true })
       }
     }
     return { success: true, files }
@@ -256,13 +263,12 @@ ipcMain.handle('resolve-dropped-files', async (event, fileInfos) => {
   const home = os.homedir()
   const vaultPath = store.get('vaultPath', null)
   const inboxPath = store.get('inboxPath', null)
+  // 不搜索 vaultPath（可能在 iCloud），只搜索本地常用目录
   const searchDirs = [
     inboxPath,
-    vaultPath,
     path.join(home, 'Desktop'),
     path.join(home, 'Downloads'),
     path.join(home, 'Documents'),
-    home
   ].filter(Boolean)
   const results = []
   for (const info of fileInfos) {
@@ -397,6 +403,7 @@ ipcMain.handle('get-inbox-path', () => store.get('inboxPath', null))
 
 // ── 列出待处理文件库文件 ──
 ipcMain.handle('list-inbox-files', async (event, inboxPath) => {
+  console.log('[IPC] list-inbox-files called at', Date.now())
   try {
     const files = []
     for (const item of fs.readdirSync(inboxPath)) {
@@ -475,6 +482,7 @@ ipcMain.handle('delete-file', async (event, filePath) => {
 
 // ── 标签统计（只读 frontmatter，不扫正文）──
 ipcMain.handle('get-tag-stats', async (event, vaultPath) => {
+  console.log('[IPC] get-tag-stats called at', Date.now())
   try {
     const allMdFiles = getAllFiles(vaultPath, '.md')
     const tagCount = {}
@@ -819,8 +827,9 @@ function getAllFiles(dir, ext) {
   try {
     for (const item of fs.readdirSync(dir)) {
       if (item.startsWith('.')) continue
+      if (item.endsWith('.icloud')) continue // 跳过 iCloud 占位符文件
       const full = path.join(dir, item)
-      const stat = fs.statSync(full)
+      const stat = fs.lstatSync(full) // lstat 不触发 iCloud 下载
       if (stat.isDirectory()) results = results.concat(getAllFiles(full, ext))
       else if (!ext || full.endsWith(ext)) results.push(full)
     }
@@ -833,8 +842,9 @@ function getFolders(dir, rootPath) {
   try {
     for (const item of fs.readdirSync(dir)) {
       if (item.startsWith('.')) continue
+      if (item.endsWith('.icloud')) continue
       const full = path.join(dir, item)
-      if (fs.statSync(full).isDirectory()) {
+      if (fs.lstatSync(full).isDirectory()) {
         results.push({ label: path.relative(rootPath, full), value: full })
         results = results.concat(getFolders(full, rootPath).slice(1))
       }
@@ -850,8 +860,9 @@ function scanDirectory(dir) {
     try {
       for (const item of fs.readdirSync(d)) {
         if (item.startsWith('.')) continue
+        if (item.endsWith('.icloud')) continue
         const full = path.join(d, item)
-        const stat = fs.statSync(full)
+        const stat = fs.lstatSync(full)
         if (stat.isDirectory()) { walk(full) } else {
           const ext = path.extname(item).toLowerCase()
           if (ext === '.md') mdCount++
@@ -877,8 +888,9 @@ function buildTree(dir, depth) {
   try {
     for (const item of fs.readdirSync(dir)) {
       if (item.startsWith('.')) continue
+      if (item.endsWith('.icloud')) continue
       const full = path.join(dir, item)
-      if (fs.statSync(full).isDirectory()) node.children.push(buildTree(full, depth + 1))
+      if (fs.lstatSync(full).isDirectory()) node.children.push(buildTree(full, depth + 1))
     }
   } catch (_) {}
   return node
@@ -926,8 +938,9 @@ function buildAnalyzeTree(dir, rootPath, depth) {
   try {
     for (const item of fs.readdirSync(dir)) {
       if (item.startsWith('.')) continue
+      if (item.endsWith('.icloud')) continue
       const full = path.join(dir, item)
-      if (fs.statSync(full).isDirectory()) node.children.push(buildAnalyzeTree(full, rootPath, depth + 1))
+      if (fs.lstatSync(full).isDirectory()) node.children.push(buildAnalyzeTree(full, rootPath, depth + 1))
     }
   } catch (_) {}
   return node
