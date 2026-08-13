@@ -1,18 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { webUtils } = require('electron/renderer')
 
-// preload 层监听 drop，获取真实路径后通过 ipcRenderer 发回渲染进程
+// preload 层监听 drop，用文件元信息让 main 处理路径
 window.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('dragover', (e) => e.preventDefault(), true)
   document.addEventListener('drop', (e) => {
+    console.log('[PRELOAD] drop fired, files:', e.dataTransfer ? e.dataTransfer.files.length : 'none')
+    e.preventDefault()
     if (!e.dataTransfer || !e.dataTransfer.files.length) return
-    const paths = Array.from(e.dataTransfer.files).map(f => {
-      try { return webUtils.getPathForFile(f) } catch (_) { return null }
-    }).filter(Boolean)
-    if (paths.length > 0) ipcRenderer.send('renderer-files-dropped', paths)
+    const fileInfos = Array.from(e.dataTransfer.files).map(f => ({ name: f.name, size: f.size, lastModified: f.lastModified }))
+    ipcRenderer.invoke('resolve-dropped-files', fileInfos).then(paths => {
+      if (paths && paths.length) {
+        ipcRenderer.send('renderer-files-dropped', paths)
+      }
+    })
   }, true)
 
   ipcRenderer.on('files-dropped-reply', (_e, paths) => {
-    window.dispatchEvent(new CustomEvent('files-dropped', { detail: paths }))
+    if (window.__onFilesDropped) window.__onFilesDropped(paths)
   })
 })
 
@@ -50,5 +54,5 @@ contextBridge.exposeInMainWorld('api', {
   offAnalyzeProgress:()          => ipcRenderer.removeAllListeners('ai-analyze-progress'),
   getFolderTree:     (vaultPath) => ipcRenderer.invoke('get-folder-tree', vaultPath),
   getFolderMdFiles:  (folderPath)=> ipcRenderer.invoke('get-folder-md-files', folderPath),
-  onFilesDropped:    (cb)        => ipcRenderer.on('files-dropped-reply', (_e, paths) => cb(paths)),
+  onFilesDropped:    (cb)        => { window.__onFilesDropped = cb },
 })

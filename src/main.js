@@ -19,6 +19,7 @@ function createWindow() {
     }
   })
   mainWindow.loadFile(path.join(__dirname, 'index.html'))
+  mainWindow.webContents.openDevTools()
 }
 
 app.whenReady().then(() => {
@@ -244,7 +245,41 @@ ipcMain.handle('get-platform', () => process.platform)
 
 // -- drop 中转：preload 发来文件路径，主进程原样发回渲染进程 --
 ipcMain.on('renderer-files-dropped', (event, paths) => {
+  console.log('[MAIN] renderer-files-dropped, paths:', paths)
   event.sender.send('files-dropped-reply', paths)
+})
+
+// -- resolve-dropped-files: 用文件元信息在磁盘上搜索完整路径 --
+ipcMain.handle('resolve-dropped-files', async (event, fileInfos) => {
+  console.log('[MAIN] resolve-dropped-files called, fileInfos:', JSON.stringify(fileInfos))
+  const settings = store.get('settings', {})
+  const searchDirs = [settings.vaultPath, settings.inboxPath].filter(Boolean)
+  const results = []
+  for (const info of fileInfos) {
+    let found = null
+    for (const dir of searchDirs) {
+      try {
+        const walk = (d) => {
+          for (const item of fs.readdirSync(d)) {
+            if (item.startsWith('.')) continue
+            const full = path.join(d, item)
+            try {
+              const stat = fs.statSync(full)
+              if (stat.isDirectory()) { walk(full) }
+              else if (item === info.name && Math.abs(stat.size - info.size) < 10) {
+                found = full
+                throw 'found'
+              }
+            } catch(e) { if (e === 'found') throw e }
+          }
+        }
+        try { walk(dir) } catch(e) { if (e === 'found') break }
+      } catch(_) {}
+      if (found) break
+    }
+    if (found) results.push(found)
+  }
+  return results
 })
 
 // ── 按文件类型列出所有文件 ──
