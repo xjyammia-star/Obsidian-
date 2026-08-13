@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -307,36 +307,37 @@
 <!-- 导入页 -->
 <div id="page-import" class="hidden">
 
-  <!-- 第一行：两个来源并排 -->
-  <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:12px;align-items:start">
 
-    <!-- 左：待处理文件库（主要区域）-->
-    <div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div class="section-title" style="margin:0">📥 待处理文件库</div>
-        <button class="btn-sm" onclick="loadInboxFiles()">🔄 刷新</button>
-        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-          <button class="btn-sm" onclick="selectAllInbox(true)">全选</button>
-          <button class="btn-sm" onclick="selectAllInbox(false)">取消</button>
-          <span id="inbox-select-count" style="font-size:12px;color:#888780"></span>
-        </div>
-      </div>
-      <div class="panel scrollable" id="inbox-file-panel" style="max-height:260px;margin-bottom:0">
-        <div class="empty-tip">加载中...</div>
+  <!-- 待处理文件库 -->
+  <div style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="section-title" style="margin:0">📥 待处理文件库</div>
+      <button class="btn-sm" onclick="loadInboxFiles()">🔄 刷新</button>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <button class="btn-sm" onclick="selectAllInbox(true)">全选</button>
+        <button class="btn-sm" onclick="selectAllInbox(false)">取消</button>
+        <span id="inbox-select-count" style="font-size:12px;color:#888780"></span>
       </div>
     </div>
-
-    <!-- 右：拖放添加（小面积）-->
-    <div style="width:160px">
-      <div class="section-title" style="margin-bottom:8px">➕ 其他文件</div>
-      <div class="drop-zone" id="drop-zone" onclick="pickFiles()"
-        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"
-        style="padding:20px 12px;margin-bottom:0;min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center">
-        <div style="font-size:28px;margin-bottom:6px">📂</div>
-        <p style="font-size:11px;text-align:center;line-height:1.6;color:#888780">点击选择<br>或拖放到这里</p>
-      </div>
-      <div id="import-file-list" class="import-file-list hidden" style="max-height:80px;overflow-y:auto;margin-top:6px;font-size:12px"></div>
+    <div class="panel scrollable" id="inbox-file-panel" style="max-height:240px;margin-bottom:0">
+      <div class="empty-tip">加载中...</div>
     </div>
+  </div>
+
+  <!-- 添加其他文件（宽条拖放区）-->
+  <div style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="section-title" style="margin:0">+ 其他文件</div>
+      <span style="font-size:12px;color:#888780">点击或拖放添加文件</span>
+    </div>
+    <div class="drop-zone" id="drop-zone" onclick="pickFiles()"
+      ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"
+      style="padding:12px 20px;display:flex;align-items:center;gap:12px;text-align:left;justify-content:flex-start;border-radius:8px">
+      <span style="font-size:22px">📂</span>
+      <span style="font-size:13px;color:#888780">点击选择文件，或将文件拖放到此处</span>
+    </div>
+    <div id="import-file-list" class="import-file-list hidden" style="margin-top:6px"></div>
+  </div>
   </div>
 
   <!-- 已处理提示栏（常驻显示）-->
@@ -996,13 +997,18 @@ function renderImportList() {
   const listEl = document.getElementById('import-file-list')
   if (!pendingFiles.length) { listEl.classList.add('hidden'); return }
   listEl.classList.remove('hidden')
-  listEl.innerHTML = pendingFiles.map((f,i) => `
-    <div class="import-file-item">
-      <span style="flex:1;font-size:12px">${f.split('/').pop()}</span>
-      <button class="remove-btn" onclick="removeFile(${i})">×</button>
-    </div>`).join('')
+  listEl.innerHTML = '<div class="panel" style="padding:0;overflow:hidden">' +
+    pendingFiles.map(function(f, i) {
+      const name = f.split('\\\\').pop().split('/').pop()
+      const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : ''
+      const icon = ['md','txt'].includes(ext) ? '\uD83D\uDCC4' : ext === 'pdf' ? '\uD83D\uDCCB' : ['png','jpg','jpeg','gif','webp'].includes(ext) ? '\uD83D\uDDBC\uFE0F' : '\uD83D\uDCC1'
+      return '<div style="padding:8px 12px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:8px">'+
+        '<span>' + icon + '</span>'+
+        '<span style="flex:1;font-size:13px;color:#3d3c38;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + f + '">' + name + '</span>'+
+        '<button class="remove-btn" style="flex-shrink:0" onclick="removeFile(' + i + ')">&times;</button>'+
+        '</div>'
+    }).join('') + '</div>'
 }
-
 function removeFile(i) { pendingFiles.splice(i,1); renderImportList() }
 
 async function doSmartImport() {
