@@ -19,7 +19,6 @@ function createWindow() {
     }
   })
   mainWindow.loadFile(path.join(__dirname, 'index.html'))
-  mainWindow.webContents.openDevTools()
 
   // 主进程监听渲染进程的 drop 事件，获取文件路径
 }
@@ -247,42 +246,52 @@ ipcMain.handle('get-platform', () => process.platform)
 
 // -- drop 中转：preload 发来文件路径，主进程原样发回渲染进程 --
 ipcMain.on('renderer-files-dropped', (event, paths) => {
-  console.log('[MAIN] renderer-files-dropped, paths:', paths)
   event.sender.send('files-dropped-reply', paths)
 })
 
 // -- resolve-dropped-files: 用文件元信息在磁盘上搜索完整路径 --
 ipcMain.handle('resolve-dropped-files', async (event, fileInfos) => {
-  console.log('[MAIN] resolve-dropped-files called, fileInfos:', JSON.stringify(fileInfos))
+  // webUtils 在 preload 环境不可用，改为在常用目录里搜索同名文件
+  const os = require('os')
+  const home = os.homedir()
   const vaultPath = store.get('vaultPath', null)
   const inboxPath = store.get('inboxPath', null)
-  console.log('[MAIN] searchDirs:', vaultPath, inboxPath)
-  const searchDirs = [vaultPath, inboxPath].filter(Boolean)
+  const searchDirs = [
+    inboxPath,
+    vaultPath,
+    path.join(home, 'Desktop'),
+    path.join(home, 'Downloads'),
+    path.join(home, 'Documents'),
+    home
+  ].filter(Boolean)
   const results = []
   for (const info of fileInfos) {
     let found = null
     for (const dir of searchDirs) {
+      if (!fs.existsSync(dir)) continue
       try {
-        const walk = (d) => {
+        const walk = (d, depth) => {
+          if (depth > 3) return
           for (const item of fs.readdirSync(d)) {
             if (item.startsWith('.')) continue
             const full = path.join(d, item)
             try {
               const stat = fs.statSync(full)
-              if (stat.isDirectory()) { walk(full) }
-              else if (item === info.name && Math.abs(stat.size - info.size) < 10) {
+              if (stat.isDirectory()) { walk(full, depth + 1) }
+              else if (item === info.name && Math.abs(stat.size - info.size) < 100) {
                 found = full
                 throw 'found'
               }
             } catch(e) { if (e === 'found') throw e }
           }
         }
-        try { walk(dir) } catch(e) { if (e === 'found') break }
+        try { walk(dir, 0) } catch(e) { if (e === 'found') break }
       } catch(_) {}
       if (found) break
     }
     if (found) results.push(found)
   }
+  console.log('[MAIN] resolve result:', results)
   return results
 })
 

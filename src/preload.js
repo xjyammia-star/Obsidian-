@@ -1,14 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 // preload 层监听 drop，用文件元信息让 main 处理路径
-console.log('[PRELOAD] electron keys:', Object.keys(require('electron')).join(', '))
-try { const wu = require('electron').webUtils; console.log('[PRELOAD] webUtils type:', typeof wu, wu ? Object.keys(wu) : 'undefined') } catch(e) { console.log('[PRELOAD] webUtils error:', e.message) }
-try { const wu2 = require('electron/renderer').webUtils; console.log('[PRELOAD] electron/renderer webUtils:', typeof wu2) } catch(e) { console.log('[PRELOAD] electron/renderer error:', e.message) }
-
 window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('dragover', (e) => e.preventDefault(), true)
   document.addEventListener('drop', (e) => {
-    console.log('[PRELOAD] drop fired, files:', e.dataTransfer ? e.dataTransfer.files.length : 'none')
     e.preventDefault()
     if (!e.dataTransfer || !e.dataTransfer.files.length) return
     const fileInfos = Array.from(e.dataTransfer.files).map(f => ({ name: f.name, size: f.size, lastModified: f.lastModified }))
