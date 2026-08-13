@@ -165,6 +165,21 @@
     .settings-label { font-size: 14px; font-weight: 500; min-width: 110px; }
     .settings-value { flex: 1; font-size: 13px; color: #5f5e5a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .settings-value.empty { color: #b4b2a9; }
+    /* Toggle 开关 */
+    .toggle-wrap { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; }
+    .toggle-wrap input { opacity:0; width:0; height:0; }
+    .toggle-slider { position:absolute; cursor:pointer; inset:0; background:#d3d1c7; border-radius:99px; transition:.2s; }
+    .toggle-slider:before { content:''; position:absolute; width:16px; height:16px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:.2s; }
+    .toggle-wrap input:checked + .toggle-slider { background:#534ab7; }
+    .toggle-wrap input:checked + .toggle-slider:before { transform:translateX(18px); }
+    /* 导入页文件列表 */
+    .inbox-file-item { display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f1efe8; font-size:13px; border-radius:4px; }
+    .inbox-file-item:last-child { border-bottom:none; }
+    .inbox-file-item:hover { background:#f5f4f0; }
+    .inbox-file-item input[type=checkbox] { flex-shrink:0; width:15px; height:15px; accent-color:#534ab7; cursor:pointer; }
+    .inbox-file-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .inbox-file-meta { font-size:11px; color:#b4b2a9; white-space:nowrap; }
+    .ai-result-badge { font-size:11px; padding:2px 7px; border-radius:4px; background:#eeedfe; color:#3c3489; white-space:nowrap; }
     /* 通用 */
     .inbox-btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
     .empty-tip { color: #b4b2a9; font-size: 13px; text-align: center; padding: 32px; }
@@ -191,7 +206,10 @@
       <span class="nav-icon">✏️</span><span class="nav-label">新建笔记</span>
     </button>
     <button class="nav-btn" onclick="showPage('tools')">
-      <span class="nav-icon">🔧</span><span class="nav-label">资料完善</span>
+      <span class="nav-icon">🧹</span><span class="nav-label">资料清理</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('ai')">
+      <span class="nav-icon">🤖</span><span class="nav-label">AI 分析</span>
     </button>
     <button class="nav-btn" onclick="showPage('settings')">
       <span class="nav-icon">⚙️</span><span class="nav-label">系统设置</span>
@@ -288,21 +306,62 @@
 
 <!-- 导入页 -->
 <div id="page-import" class="hidden">
-  <div class="inbox-btn-row">
-    <button class="btn-sm green" onclick="loadInboxFiles()">📥 从待处理文件库加载</button>
-    <span style="font-size:12px;color:#888780;align-self:center" id="inbox-path-tip"></span>
+
+  <!-- 第一行：两个来源并排 -->
+  <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:12px;align-items:start">
+
+    <!-- 左：待处理文件库（主要区域）-->
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="section-title" style="margin:0">📥 待处理文件库</div>
+        <button class="btn-sm" onclick="loadInboxFiles()">🔄 刷新</button>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="btn-sm" onclick="selectAllInbox(true)">全选</button>
+          <button class="btn-sm" onclick="selectAllInbox(false)">取消</button>
+          <span id="inbox-select-count" style="font-size:12px;color:#888780"></span>
+        </div>
+      </div>
+      <div class="panel scrollable" id="inbox-file-panel" style="max-height:260px;margin-bottom:0">
+        <div class="empty-tip">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 右：拖放添加（小面积）-->
+    <div style="width:160px">
+      <div class="section-title" style="margin-bottom:8px">➕ 其他文件</div>
+      <div class="drop-zone" id="drop-zone" onclick="pickFiles()"
+        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"
+        style="padding:20px 12px;margin-bottom:0;min-height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:28px;margin-bottom:6px">📂</div>
+        <p style="font-size:11px;text-align:center;line-height:1.6;color:#888780">点击选择<br>或拖放到这里</p>
+      </div>
+      <div id="import-file-list" class="import-file-list hidden" style="max-height:80px;overflow-y:auto;margin-top:6px;font-size:12px"></div>
+    </div>
   </div>
-  <div class="drop-zone" id="drop-zone" onclick="pickFiles()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
-    <div class="drop-icon">📂</div>
-    <p>点击选择文件，或把文件拖放到这里<br><span style="font-size:12px;color:#b4b2a9">支持任意格式：PDF、图片、视频、Word 等</span></p>
+
+  <!-- 已处理提示栏（常驻显示）-->
+  <div style="margin-bottom:12px;padding:8px 14px;background:#faeeda;border-radius:8px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:12px;color:#854f0b;flex:1">已整理的资料会存入「已处理」文件夹，可选择清除或保留原文件</span>
+    <button class="btn-sm" style="color:#854f0b;border-color:#fac775;white-space:nowrap" onclick="clearProcessed()">清除已处理</button>
+    <button class="btn-sm" style="white-space:nowrap" onclick="openProcessedFolder()">查看文件</button>
   </div>
-  <div id="import-file-list" class="import-file-list hidden"></div>
-  <div id="import-actions" class="hidden">
-    <div class="section-title">选择存放位置</div>
-    <select class="folder-select" id="folder-select"></select>
-    <button class="btn-primary" onclick="doImport()">确认导入</button>
+
+  <!-- 第二行：确认导入 + 存入位置（横向一行）-->
+  <div style="display:flex;align-items:center;gap:16px;background:#fff;border:1px solid #e0dfd8;border-radius:12px;padding:14px 16px;margin-bottom:10px">
+    <button class="btn-primary" onclick="doSmartImport()" id="btn-import" style="white-space:nowrap;flex-shrink:0">确认导入</button>
+    <div id="ai-classify-hint" style="font-size:12px;color:#534ab7;display:none;white-space:nowrap">
+      🤖 AI 自动分类，自动判断文件夹
+    </div>
+    <select class="folder-select" id="folder-select" style="flex:1;margin-bottom:0"></select>
   </div>
-  <div id="import-result" class="hidden"></div>
+
+  <div id="import-result" class="hidden" style="margin-top:0"></div>
+
+  <!-- 导入结果 -->
+  <div id="import-ai-results" class="hidden" style="margin-top:12px">
+    <div class="section-title">导入结果</div>
+    <div class="panel scrollable" id="import-results-list" style="max-height:180px"></div>
+  </div>
 </div>
 
 <!-- 笔记工具页 -->
@@ -357,6 +416,33 @@
   </div>
 </div>
 
+<!-- AI 分析页 -->
+<div id="page-ai" class="hidden">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="panel" style="opacity:0.5;pointer-events:none">
+      <div class="section-title">📁 知识库内容分析</div>
+      <p style="font-size:13px;color:#888780;line-height:1.8">选择一个文件夹，AI 读取所有笔记后生成分析报告，包括知识点梳理、内容摘要、知识空缺等。</p>
+      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+    </div>
+    <div class="panel" style="opacity:0.5;pointer-events:none">
+      <div class="section-title">🎬 YouTube 视频转笔记</div>
+      <p style="font-size:13px;color:#888780;line-height:1.8">输入 YouTube 链接，AI 提取字幕并生成结构化笔记，自动打标签存入知识库。</p>
+      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+    </div>
+    <div class="panel" style="opacity:0.5;pointer-events:none">
+      <div class="section-title">🎙️ 本地视频/音频转笔记</div>
+      <p style="font-size:13px;color:#888780;line-height:1.8">上传本地视频或音频文件，通过 Whisper 语音识别提取内容，AI 生成结构化笔记。</p>
+      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+    </div>
+    <div class="panel" style="opacity:0.5;pointer-events:none">
+      <div class="section-title">🌐 网页内容转笔记</div>
+      <p style="font-size:13px;color:#888780;line-height:1.8">输入网页链接，AI 提取主要内容并整理成笔记，自动分类存入知识库。</p>
+      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:#b4b2a9;margin-top:8px;text-align:center">以上功能需要在「系统设置」中配置 API Key 后使用</p>
+</div>
+
 <!-- 设置页 -->
 <div id="page-settings" class="hidden">
   <div class="section-title">路径设置</div>
@@ -371,8 +457,66 @@
       <div class="settings-value empty" id="set-inbox-path">未设置</div>
       <button class="btn-sm green" onclick="changeInbox()">选择文件夹</button>
     </div>
+    <div class="settings-row">
+      <div class="settings-label">🗂️ 临时文件夹</div>
+      <div class="settings-value empty" id="set-inbox-folder">未设置（默认存入知识库 00 Inbox）</div>
+      <button class="btn-sm" onclick="selectInboxFolder()">选择文件夹</button>
+    </div>
   </div>
-  <p style="font-size:12px;color:#888780">待处理文件库：存放还没整理进 Obsidian 的文件，设置后可在「资料整理」页一键加载。</p>
+
+  <div class="section-title" style="margin-top:16px">AI 功能设置</div>
+  <div class="settings-section">
+    <div class="settings-row">
+      <div class="settings-label">🤖 AI 自动分类</div>
+      <div style="flex:1;font-size:13px;color:#5f5e5a">导入文件时由 AI 自动判断存入哪个文件夹</div>
+      <label class="toggle-wrap">
+        <input type="checkbox" id="ai-classify-toggle" onchange="saveAiSettings()">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">🔔 提醒功能</div>
+      <div style="flex:1;font-size:13px;color:#5f5e5a">检测今日备忘文件并发送系统提醒</div>
+      <label class="toggle-wrap">
+        <input type="checkbox" id="reminder-toggle" onchange="saveAiSettings()">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" id="reminder-advance-row" style="display:none">
+      <div class="settings-label">⏰ 提前提醒</div>
+      <select class="sort-select" id="reminder-advance" onchange="saveAiSettings()" style="font-size:13px;padding:5px 10px">
+        <option value="0">准时提醒</option>
+        <option value="5">提前 5 分钟</option>
+        <option value="15">提前 15 分钟</option>
+        <option value="30">提前 30 分钟</option>
+        <option value="60">提前 1 小时</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">🔑 API Key</div>
+      <input type="password" id="ai-api-key" placeholder="输入火山引擎 API Key"
+        style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
+        onchange="saveAiSettings()">
+      <button class="btn-sm" onclick="testAiConnection()" style="margin-left:8px">测试连接</button>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">📡 模型 ID</div>
+      <input type="text" id="ai-model-id" placeholder="如 ep-20260813112220-v8v92"
+        style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
+        onchange="saveAiSettings()">
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">🌐 接入点</div>
+      <input type="text" id="ai-endpoint" placeholder="https://ark.cn-beijing.volces.com/api/v3"
+        style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
+        onchange="saveAiSettings()">
+    </div>
+    <div class="settings-row">
+      <div class="settings-label"></div>
+      <div id="ai-test-result" style="flex:1;font-size:12px;color:#888780"></div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:#888780;margin-top:4px">API Key 仅保存在本地，不会上传到任何服务器。</p>
 </div>
 
 </div><!-- end .main -->
@@ -419,11 +563,19 @@ function showMainUI(vaultPath) {
   showPage('overview')
 }
 function showPage(name) {
-  ['overview','import','search','new-note','tools','settings'].forEach(p => document.getElementById('page-'+p).classList.add('hidden'))
+  ['overview','import','search','new-note','tools','ai','settings'].forEach(p => document.getElementById('page-'+p).classList.add('hidden'))
   document.getElementById('page-'+name).classList.remove('hidden')
-  const pages = ['overview','import','search','new-note','tools','settings']
+  const pages = ['overview','import','search','new-note','tools','ai','settings']
   document.querySelectorAll('.nav-btn').forEach((btn,i) => btn.classList.toggle('active', pages[i] === name))
-  if (name === 'import') { loadFolders(); updateInboxTip() }
+  if (name === 'import') {
+    loadFolders()
+    loadInboxFiles()
+    // 重置上次导入结果
+    document.getElementById('import-result').classList.add('hidden')
+    document.getElementById('import-ai-results').classList.add('hidden')
+    document.getElementById('import-results-list').innerHTML = ''
+  }
+  if (name === 'settings') loadAiSettings()
   if (name === 'new-note') showPage_newNote()
   if (name === 'search' && !tagCloudLoaded) loadTagCloud()
 }
@@ -690,46 +842,158 @@ async function doSearch() {
 }
 
 /* ── 导入 ── */
-function updateInboxTip() {
-  const tip = document.getElementById('inbox-path-tip')
-  if (tip && currentInboxPath) tip.textContent = currentInboxPath
-}
+let aiClassifyEnabled = false
+
 async function loadFolders() {
   if (!currentVaultPath) return
-  const res = await window.api.getVaultFolders(currentVaultPath); if (!res.success) return
-  document.getElementById('folder-select').innerHTML = res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
-  updateInboxTip()
+  const res = await window.api.getVaultFolders(currentVaultPath)
+  if (!res.success) return
+  document.getElementById('folder-select').innerHTML =
+    res.folders.map(f => `<option value="${f.value}">${f.label}</option>`).join('')
+  const settings = await window.api.getAiSettings()
+  aiClassifyEnabled = settings.aiClassifyEnabled || false
+  const hint = document.getElementById('ai-classify-hint')
+  const sel  = document.getElementById('folder-select')
+  if (hint && sel) {
+    hint.style.display = aiClassifyEnabled ? 'block' : 'none'
+    sel.style.display  = aiClassifyEnabled ? 'none'  : 'block'
+  }
 }
+
 async function loadInboxFiles() {
-  if (!currentInboxPath) { alert('请先在「设置」页面设置待处理文件库路径'); return }
+  const panel = document.getElementById('inbox-file-panel')
+  if (!currentInboxPath) {
+    panel.innerHTML = '<div class="empty-tip">请先在「系统设置」里设置待处理文件库路径</div>'
+    return
+  }
+  panel.innerHTML = '<div class="loading">加载中...</div>'
   const res = await window.api.listInboxFiles(currentInboxPath)
-  if (!res.success) { alert('读取失败：' + res.error); return }
-  if (!res.files.length) { alert('待处理文件库中没有文件'); return }
-  addFiles(res.files.map(f => f.path))
+  if (!res.success || !res.files.length) {
+    panel.innerHTML = '<div class="empty-tip">待处理文件库里没有文件</div>'
+  } else {
+    panel.innerHTML = res.files.map(f => `
+      <div class="inbox-file-item" onclick="toggleInboxCheck(this)">
+        <input type="checkbox" class="inbox-check" data-path="${f.path}" onclick="event.stopPropagation();updateInboxCount()">
+        <span class="ff-icon">${fileIcon(f.name)}</span>
+        <span class="inbox-file-name" title="${f.path}">${f.name}</span>
+        <span class="inbox-file-meta">${f.mtime}</span>
+      </div>`).join('')
+    updateInboxCount()
+  }
+  // 同步检查已处理文件夹状态
+  loadProcessedStatus()
 }
-async function pickFiles() { const files = await window.api.selectImportFiles(); if (files.length) addFiles(files) }
-function addFiles(files) { files.forEach(f => { if (!pendingFiles.includes(f)) pendingFiles.push(f) }); renderImportList() }
+
+async function loadProcessedStatus() {
+  if (!currentInboxPath) return
+  const res = await window.api.getProcessedFolder(currentInboxPath)
+  const bar = document.getElementById('processed-bar')
+  const txt = document.getElementById('processed-bar-text')
+  if (res.success && res.count > 0) {
+    txt.textContent = `文件已分类整理到 Obsidian，原文件（${res.count} 个）已存放到「已处理」文件夹。可选择清除或保留。`
+    bar.classList.remove('hidden')
+  } else {
+    bar.classList.add('hidden')
+  }
+}
+
+async function clearProcessed() {
+  if (!currentInboxPath) return
+  const res = await window.api.getProcessedFolder(currentInboxPath)
+  if (!res.count) return
+  if (!confirm(`确定要清除「已处理」文件夹中的 ${res.count} 个文件吗？\n文件会移到系统回收站，可以恢复。`)) return
+  const r = await window.api.clearProcessedFolder(currentInboxPath)
+  if (r.success) {
+    document.getElementById('processed-bar').classList.add('hidden')
+    alert(`已清除 ${r.count} 个文件，已移入系统回收站。`)
+  }
+}
+
+function openProcessedFolder() {
+  if (!currentInboxPath) return
+  const processedPath = currentInboxPath + '/已处理'
+  window.api.openFile(processedPath)
+}
+
+function toggleInboxCheck(row) {
+  const cb = row.querySelector('input[type=checkbox]')
+  cb.checked = !cb.checked
+  updateInboxCount()
+}
+
+function updateInboxCount() {
+  const total    = document.querySelectorAll('.inbox-check').length
+  const selected = document.querySelectorAll('.inbox-check:checked').length
+  const el = document.getElementById('inbox-select-count')
+  if (el) el.textContent = selected > 0 ? `已选 ${selected} / ${total} 个` : `共 ${total} 个文件`
+}
+
+function selectAllInbox(checked) {
+  document.querySelectorAll('.inbox-check').forEach(cb => cb.checked = checked)
+  updateInboxCount()
+}
+
+async function pickFiles() {
+  const files = await window.api.selectImportFiles()
+  if (files.length) addExtraFiles(files)
+}
+
+function addExtraFiles(files) {
+  files.forEach(f => { if (!pendingFiles.includes(f)) pendingFiles.push(f) })
+  renderImportList()
+}
+
 function renderImportList() {
-  const listEl = document.getElementById('import-file-list'), actEl = document.getElementById('import-actions')
-  document.getElementById('import-result').classList.add('hidden')
-  if (!pendingFiles.length) { listEl.classList.add('hidden'); actEl.classList.add('hidden'); return }
-  listEl.classList.remove('hidden'); actEl.classList.remove('hidden')
-  listEl.innerHTML = pendingFiles.map((f,i) => `<div class="import-file-item">
-    <span style="flex:1">${f.split(/[\\/]/).pop()}</span>
-    <span style="font-size:11px;color:#b4b2a9;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f}</span>
-    <button class="remove-btn" onclick="removeFile(${i})">×</button>
-  </div>`).join('')
+  const listEl = document.getElementById('import-file-list')
+  if (!pendingFiles.length) { listEl.classList.add('hidden'); return }
+  listEl.classList.remove('hidden')
+  listEl.innerHTML = pendingFiles.map((f,i) => `
+    <div class="import-file-item">
+      <span style="flex:1;font-size:12px">${f.split('/').pop()}</span>
+      <button class="remove-btn" onclick="removeFile(${i})">×</button>
+    </div>`).join('')
 }
+
 function removeFile(i) { pendingFiles.splice(i,1); renderImportList() }
-async function doImport() {
-  const targetDir = document.getElementById('folder-select').value
-  const res = await window.api.importFiles({ files: pendingFiles, targetDir })
-  const ok = res.filter(r => r.success).length, fail = res.filter(r => !r.success).length
+
+async function doSmartImport() {
+  const inboxFiles = [...document.querySelectorAll('.inbox-check:checked')].map(cb => cb.dataset.path)
+  const allFiles = [...new Set([...inboxFiles, ...pendingFiles])]
+  if (!allFiles.length) { alert('请先选择要导入的文件'); return }
+  const btn = document.getElementById('btn-import')
+  btn.disabled = true; btn.textContent = '处理中...'
   const resultEl = document.getElementById('import-result')
-  resultEl.className = 'import-result ' + (fail ? 'error' : 'success')
-  resultEl.innerHTML = `成功导入 ${ok} 个文件${fail ? `，${fail} 个失败` : ''}。`
+  resultEl.className = 'import-result success'
   resultEl.classList.remove('hidden')
-  pendingFiles = []; renderImportList(); loadOverview()
+  if (aiClassifyEnabled) {
+    resultEl.innerHTML = `🤖 AI 正在并行分析 ${allFiles.length} 个文件，请稍候...`
+    const folders = await window.api.getVaultFolders(currentVaultPath)
+    const vaultFolders = folders.success ? folders.folders : []
+    const res = await window.api.aiImportFiles({ files: allFiles, vaultPath: currentVaultPath, vaultFolders })
+    const ok   = res.filter(r => r.success).length
+    const fail = res.filter(r => !r.success).length
+    resultEl.innerHTML = `✅ AI 分类完成，成功 ${ok} 个${fail ? `，失败 ${fail} 个` : ''}`
+    const aiResultsEl = document.getElementById('import-ai-results')
+    const listEl = document.getElementById('import-results-list')
+    aiResultsEl.classList.remove('hidden')
+    listEl.innerHTML = res.map(r => r.success
+      ? `<div class="folder-file-item">
+          <span class="ff-icon">${fileIcon(r.file)}</span>
+          <span class="ff-name">${r.file}</span>
+          <span class="ai-result-badge">→ ${r.aiFolder}</span>
+          ${r.isEmpty ? `<span class="ai-result-badge" style="background:#f1efe8;color:#888780">内容为空，未调用AI</span>` : ''}
+          ${r.aiTags ? `<span class="ai-result-badge" style="background:#eaf3de;color:#3b6d11">${r.aiTags}</span>` : ''}
+        </div>`
+      : `<div class="folder-file-item"><span class="ff-name" style="color:#a32d2d">❌ ${r.file} — ${r.error}</span></div>`
+    ).join('')
+  } else {
+    const targetDir = document.getElementById('folder-select').value
+    const res = await window.api.importFiles({ files: allFiles, targetDir })
+    const ok = res.filter(r => r.success).length, fail = res.filter(r => !r.success).length
+    resultEl.innerHTML = `✅ 成功导入 ${ok} 个文件${fail ? `，${fail} 个失败` : ''}`
+  }
+  btn.disabled = false; btn.textContent = '确认导入'
+  pendingFiles = []; renderImportList(); loadInboxFiles(); loadOverview()
 }
 function handleDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over') }
 function handleDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over') }
@@ -893,6 +1157,65 @@ async function doMoveNote() {
 function openFile(p) { window.api.openFile(p) }
 function openInObsidian(p) { window.api.openInObsidian(p) }
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
+
+/* ── 设置页 ── */
+async function loadAiSettings() {
+  const s = await window.api.getAiSettings()
+  document.getElementById('ai-api-key').value      = s.apiKey || ''
+  document.getElementById('ai-model-id').value     = s.modelId || ''
+  document.getElementById('ai-endpoint').value     = s.endpoint || 'https://ark.cn-beijing.volces.com/api/v3'
+  document.getElementById('ai-classify-toggle').checked = s.aiClassifyEnabled || false
+  document.getElementById('reminder-toggle').checked    = s.reminderEnabled || false
+  document.getElementById('reminder-advance').value     = String(s.reminderAdvance || 0)
+  document.getElementById('reminder-advance-row').style.display = s.reminderEnabled ? 'flex' : 'none'
+  const inboxFolderEl = document.getElementById('set-inbox-folder')
+  if (inboxFolderEl && s.inboxFolder) { inboxFolderEl.textContent = s.inboxFolder; inboxFolderEl.classList.remove('empty') }
+}
+
+async function saveAiSettings() {
+  const s = {
+    apiKey:            document.getElementById('ai-api-key').value.trim(),
+    modelId:           document.getElementById('ai-model-id').value.trim(),
+    endpoint:          document.getElementById('ai-endpoint').value.trim() || 'https://ark.cn-beijing.volces.com/api/v3',
+    aiClassifyEnabled: document.getElementById('ai-classify-toggle').checked,
+    reminderEnabled:   document.getElementById('reminder-toggle').checked,
+    reminderAdvance:   parseInt(document.getElementById('reminder-advance').value) || 0,
+    inboxFolder:       document.getElementById('set-inbox-folder').textContent.includes('未设置') ? '' : document.getElementById('set-inbox-folder').textContent
+  }
+  await window.api.saveAiSettings(s)
+  // 提醒行显示/隐藏
+  document.getElementById('reminder-advance-row').style.display = s.reminderEnabled ? 'flex' : 'none'
+}
+
+async function selectInboxFolder() {
+  const res = await window.api.selectInboxFolder()
+  if (res.success) {
+    const el = document.getElementById('set-inbox-folder')
+    el.textContent = res.path; el.classList.remove('empty')
+    const s = await window.api.getAiSettings()
+    s.inboxFolder = res.path
+    await window.api.saveAiSettings(s)
+  }
+}
+
+async function testAiConnection() {
+  const resultEl = document.getElementById('ai-test-result')
+  resultEl.textContent = '测试中...'
+  resultEl.style.color = '#888780'
+  const apiKey  = document.getElementById('ai-api-key').value.trim()
+  const modelId = document.getElementById('ai-model-id').value.trim()
+  const endpoint = document.getElementById('ai-endpoint').value.trim() || 'https://ark.cn-beijing.volces.com/api/v3'
+  if (!apiKey || !modelId) { resultEl.textContent = '请先填写 API Key 和模型 ID'; resultEl.style.color = '#a32d2d'; return }
+  await window.api.saveAiSettings({ apiKey, modelId, endpoint, aiClassifyEnabled: document.getElementById('ai-classify-toggle').checked, reminderEnabled: document.getElementById('reminder-toggle').checked, reminderAdvance: parseInt(document.getElementById('reminder-advance').value)||0, inboxFolder: '' })
+  const res = await window.api.aiClassifyFile({ filePath: '', vaultPath: currentVaultPath||'', vaultFolders: [], testOnly: true })
+  if (res && res.error && res.error.includes('未设置')) {
+    resultEl.textContent = '❌ 请填写 API Key 和模型 ID'
+    resultEl.style.color = '#a32d2d'
+  } else {
+    resultEl.textContent = '✅ 连接成功'
+    resultEl.style.color = '#3b6d11'
+  }
+}
 </script>
 </body>
 </html>

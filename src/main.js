@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const https = require('https')
 const Store = require('electron-store')
 
 const store = new Store()
@@ -10,6 +11,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100, height: 720, minWidth: 800, minHeight: 600,
     title: 'Obsidian 管理工具',
+    icon: path.join(__dirname, '../assets/icon.icns'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -19,7 +21,19 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'))
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  createWindow()
+  if (process.platform === 'darwin') {
+    try {
+      const { nativeImage } = require('electron')
+      const icnsPath = path.join(__dirname, '../assets/icon.icns')
+      if (fs.existsSync(icnsPath)) {
+        const image = nativeImage.createFromPath(icnsPath)
+        if (!image.isEmpty()) app.dock.setIcon(image)
+      }
+    } catch (e) { console.log('dock icon error:', e.message) }
+  }
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 
@@ -172,6 +186,19 @@ ipcMain.handle('import-files', async (event, { files, targetDir }) => {
       const now = new Date().toISOString().slice(0, 10)
       const mdContent = `---\ntitle: ${fileName}\ndate: ${now}\ntype: ${ext}\nsource: 导入\n---\n\n# ${fileName}\n\n- 导入日期：${now}\n- 文件类型：${ext}\n- 原始文件：[[${fileName}]]\n`
       if (!fs.existsSync(mdPath)) fs.writeFileSync(mdPath, mdContent, 'utf-8')
+      // 移到已处理文件夹
+      const inboxDir = path.dirname(src)
+      const processedDir = path.join(inboxDir, '已处理')
+      if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir)
+      const processedPath = path.join(processedDir, fileName)
+      try {
+        if (fs.existsSync(processedPath)) {
+          const ts = Date.now(), ext2 = path.extname(fileName), base = path.basename(fileName, ext2)
+          fs.renameSync(src, path.join(processedDir, `${base}_${ts}${ext2}`))
+        } else {
+          fs.renameSync(src, processedPath)
+        }
+      } catch (_) {}
       results.push({ file: fileName, success: true })
     } catch (err) { results.push({ file: path.basename(src), success: false, error: err.message }) }
   }
@@ -253,7 +280,36 @@ ipcMain.handle('list-folder-files', async (event, { folderPath, vaultPath }) => 
   } catch (err) { return { success: false, error: err.message } }
 })
 
-// ── 待处理文件库 ──
+// ── 获取已处理文件夹信息 ──
+ipcMain.handle('get-processed-folder', async (event, inboxPath) => {
+  try {
+    const processedDir = path.join(inboxPath, '已处理')
+    if (!fs.existsSync(processedDir)) return { success: true, count: 0, size: 0 }
+    const files = fs.readdirSync(processedDir).filter(f => !f.startsWith('.'))
+    let size = 0
+    files.forEach(f => { try { size += fs.statSync(path.join(processedDir, f)).size } catch (_) {} })
+    return { success: true, count: files.length, size, path: processedDir }
+  } catch (err) { return { success: false, error: err.message } }
+})
+
+// ── 清除已处理文件夹 ──
+ipcMain.handle('clear-processed-folder', async (event, inboxPath) => {
+  try {
+    const processedDir = path.join(inboxPath, '已处理')
+    if (!fs.existsSync(processedDir)) return { success: true, count: 0 }
+    const files = fs.readdirSync(processedDir).filter(f => !f.startsWith('.'))
+    let count = 0
+    for (const f of files) {
+      try {
+        await shell.trashItem(path.join(processedDir, f))
+        count++
+      } catch (_) {
+        try { fs.unlinkSync(path.join(processedDir, f)); count++ } catch (_) {}
+      }
+    }
+    return { success: true, count }
+  } catch (err) { return { success: false, error: err.message } }
+})
 ipcMain.handle('select-inbox', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: '选择待处理文件夹' })
   if (!result.canceled && result.filePaths.length > 0) {
@@ -398,6 +454,241 @@ ipcMain.handle('search-by-tag', async (event, { vaultPath, tag }) => {
     }
     return { success: true, results }
   } catch (err) { return { success: false, error: err.message } }
+})
+
+// ── 设置：保存/读取 AI 配置 ──
+ipcMain.handle('save-ai-settings', async (event, settings) => {
+  store.set('aiSettings', settings)
+  return { success: true }
+})
+ipcMain.handle('get-ai-settings', () => {
+  return store.get('aiSettings', {
+    apiKey: '',
+    modelId: '',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    aiClassifyEnabled: false,
+    reminderEnabled: false,
+    reminderAdvance: 0,
+    inboxFolder: ''
+  })
+})
+
+// ── 设置：选择临时文件夹 ──
+ipcMain.handle('select-inbox-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'], title: '选择临时文件夹（无法分类的文件存放位置）'
+  })
+  if (!result.canceled && result.filePaths.length > 0) {
+    return { success: true, path: result.filePaths[0] }
+  }
+  return { success: false }
+})
+
+// ── AI 调用（火山引擎）──
+function callVolcanoAI(apiKey, modelId, endpoint, messages) {
+  const timeoutMs = 20000 // 20秒硬超时
+  const apiCall = new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model: modelId, messages, max_tokens: 500 })
+    const url = new URL(endpoint + '/chat/completions')
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }
+    const req = https.request(options, res => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          resolve(json.choices?.[0]?.message?.content || '')
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('AI 请求超时（20秒）')), timeoutMs)
+  )
+  return Promise.race([apiCall, timeout])
+}
+
+// ── AI 分类单个文件 ──
+ipcMain.handle('ai-classify-file', async (event, { filePath, vaultPath, vaultFolders }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) return { success: false, error: '未设置 API Key 或模型ID' }
+
+  const ext = path.extname(filePath).toLowerCase()
+  const fileName = path.basename(filePath)
+  const isText = ['.md', '.txt'].includes(ext)
+  const isPdf = ext === '.pdf'
+
+  let contentForAI = `文件名：${fileName}`
+
+  // md/txt 读取正文
+  if (isText) {
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 1500)
+      contentForAI += `\n正文内容（前1500字）：\n${body}`
+    } catch (_) {}
+  }
+
+  // PDF 提取文字（只处理文字版，加超时保护）
+  if (isPdf) {
+    try {
+      const { execSync } = require('child_process')
+      const text = execSync(`pdftotext "${filePath}" - 2>/dev/null`, { timeout: 5000 }).toString().slice(0, 1500)
+      if (text.trim()) contentForAI += `\nPDF内容（前1500字）：\n${text}`
+    } catch (_) {
+      // pdftotext 不存在或超时，只用文件名判断
+    }
+  }
+
+  // 构建知识库文件夹列表
+  const folderList = vaultFolders.map(f => f.label).filter(l => l !== '（根目录）').join('、')
+
+  const prompt = `你是一个知识库文件分类助手。
+知识库现有文件夹：${folderList}
+请根据以下文件信息，判断：
+1. 最适合存放的文件夹路径（从上面的列表中选择，输出相对路径，如"01 AI/Claude"）
+2. 适合的标签（可自由生成，用逗号分隔，中文）
+3. 如果是md文件且没有标题，建议一个标题（不超过20字）
+
+文件信息：
+${contentForAI}
+
+请严格按以下JSON格式回复，不要加任何其他文字：
+{"folder":"xxx","tags":"xxx,xxx","title":"xxx"}`
+
+  try {
+    const reply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [
+      { role: 'user', content: prompt }
+    ])
+    const clean = reply.replace(/```json|```/g, '').trim()
+    const result = JSON.parse(clean)
+    return { success: true, folder: result.folder, tags: result.tags, title: result.title }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// ── 导入并 AI 分类（批量，并行处理）──
+ipcMain.handle('ai-import-files', async (event, { files, vaultPath, vaultFolders }) => {
+  const settings = store.get('aiSettings', {})
+  const inboxFolder = settings.inboxFolder || path.join(vaultPath, '00 Inbox')
+
+  // 并行处理所有文件
+  const results = await Promise.all(files.map(async srcPath => {
+    try {
+      const ext = path.extname(srcPath).toLowerCase()
+      const fileName = path.basename(srcPath)
+      const isText = ['.md', '.txt'].includes(ext)
+
+      // 检查是否为空文件，空文件直接存 inbox 不调 AI
+      let isEmpty = false
+      if (isText) {
+        try {
+          const raw = fs.readFileSync(srcPath, 'utf-8').trim()
+          const body = raw.replace(/^---[\s\S]*?---\n?/, '').replace(/^#[^\n]*\n?/, '').trim()
+          if (body.length < 10) isEmpty = true
+        } catch (_) {}
+      }
+
+      let targetDir = inboxFolder
+      let aiFolder = isEmpty ? '00 Inbox（内容为空）' : ''
+      let aiTags = ''
+      let aiTitle = ''
+
+      if (!isEmpty) {
+        // 调 AI 分类
+        const classify = await (async () => {
+          try {
+            // 复用 ai-classify-file 的逻辑
+            if (!settings.apiKey || !settings.modelId) return null
+            let contentForAI = `文件名：${fileName}`
+            if (isText) {
+              const raw = fs.readFileSync(srcPath, 'utf-8')
+              const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 1500)
+              contentForAI += `\n正文内容：\n${body}`
+            } else if (ext === '.pdf') {
+              try {
+                const { execSync } = require('child_process')
+                const text = execSync(`pdftotext "${srcPath}" - 2>/dev/null`, { timeout: 5000 }).toString().slice(0, 1500)
+                if (text.trim()) contentForAI += `\nPDF内容：\n${text}`
+              } catch (_) {}
+            }
+            const folderList = vaultFolders.map(f => f.label).filter(l => l !== '（根目录）').join('、')
+            const prompt = `你是知识库分类助手。知识库文件夹：${folderList}\n根据以下文件信息判断：1.存放文件夹（输出相对路径如"01 AI/Claude"）2.标签（中文逗号分隔）3.md文件无标题则建议标题（20字内）\n文件信息：${contentForAI}\n只输出JSON：{"folder":"xxx","tags":"xxx","title":"xxx"}`
+            const reply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: prompt }])
+            const clean = reply.replace(/```json|```/g, '').trim()
+            return JSON.parse(clean)
+          } catch (_) { return null }
+        })()
+
+        if (classify && classify.folder) {
+          const matched = vaultFolders.find(f => f.label === classify.folder || f.value.endsWith(classify.folder))
+          if (matched) { targetDir = matched.value; aiFolder = classify.folder }
+          else aiFolder = '00 Inbox（路径未匹配）'
+          aiTags = classify.tags || ''
+          aiTitle = classify.title || ''
+        } else {
+          aiFolder = '00 Inbox（AI无法判断）'
+        }
+      }
+
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
+      const destPath = path.join(targetDir, fileName)
+      fs.copyFileSync(srcPath, destPath)
+
+      // 把源文件移到待处理文件库的「已处理」文件夹
+      const inboxDir = path.dirname(srcPath)
+      const processedDir = path.join(inboxDir, '已处理')
+      if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir)
+      const processedPath = path.join(processedDir, fileName)
+      try {
+        if (fs.existsSync(processedPath)) {
+          // 同名文件加时间戳避免冲突
+          const ts = Date.now()
+          const ext2 = path.extname(fileName)
+          const base = path.basename(fileName, ext2)
+          fs.renameSync(srcPath, path.join(processedDir, `${base}_${ts}${ext2}`))
+        } else {
+          fs.renameSync(srcPath, processedPath)
+        }
+      } catch (_) {}
+
+      // 更新 md 文件 frontmatter
+      if (ext === '.md' && (aiTags || aiTitle)) {
+        let content = fs.readFileSync(destPath, 'utf-8')
+        const date = new Date().toISOString().slice(0, 10)
+        const tagsArr = aiTags ? aiTags.split(',').map(t => t.trim()).filter(Boolean) : []
+        const tagsYaml = tagsArr.length ? `[${tagsArr.join(', ')}]` : '[]'
+        if (content.startsWith('---')) {
+          if (aiTags && !content.match(/^tags:/m)) {
+            content = content.replace(/^---/, `---\ntags: ${tagsYaml}`)
+          }
+        } else {
+          const title = aiTitle || path.basename(srcPath, '.md')
+          content = `---\ntitle: ${title}\ndate: ${date}\ntags: ${tagsYaml}\n---\n\n${content}`
+        }
+        fs.writeFileSync(destPath, content, 'utf-8')
+      }
+
+      return { file: fileName, success: true, targetDir, aiFolder, aiTags, aiTitle, isEmpty }
+    } catch (err) {
+      return { file: path.basename(srcPath), success: false, error: err.message }
+    }
+  }))
+
+  return results
 })
 
 // ── 移动笔记 ──

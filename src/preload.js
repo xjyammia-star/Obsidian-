@@ -22,4 +22,11 @@ contextBridge.exposeInMainWorld('api', {
   searchByTag:       (args)      => ipcRenderer.invoke('search-by-tag', args),
   createNote:        (args)      => ipcRenderer.invoke('create-note', args),
   moveNote:          (args)      => ipcRenderer.invoke('move-note', args),
+  saveAiSettings:    (settings)  => ipcRenderer.invoke('save-ai-settings', settings),
+  getAiSettings:     ()          => ipcRenderer.invoke('get-ai-settings'),
+  selectInboxFolder: ()          => ipcRenderer.invoke('select-inbox-folder'),
+  aiClassifyFile:    (args)      => ipcRenderer.invoke('ai-classify-file', args),
+  aiImportFiles:     (args)      => ipcRenderer.invoke('ai-import-files', args),
+  getProcessedFolder:(inboxPath) => ipcRenderer.invoke('get-processed-folder', inboxPath),
+  clearProcessedFolder:(inboxPath)=> ipcRenderer.invoke('clear-processed-folder', inboxPath),
 })
