@@ -485,10 +485,10 @@ ipcMain.handle('select-inbox-folder', async () => {
 })
 
 // ── AI 调用（火山引擎）──
-function callVolcanoAI(apiKey, modelId, endpoint, messages) {
-  const timeoutMs = 20000 // 20秒硬超时
+function callVolcanoAI(apiKey, modelId, endpoint, messages, maxTokens) {
+  const timeoutMs = 60000
   const apiCall = new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model: modelId, messages, max_tokens: 500 })
+    const body = JSON.stringify({ model: modelId, messages, max_tokens: maxTokens || 500 })
     const url = new URL(endpoint + '/chat/completions')
     const options = {
       hostname: url.hostname,
@@ -808,3 +808,97 @@ function buildTree(dir, depth) {
   } catch (_) {}
   return node
 }
+
+// ── AI 分析文件夹（Map-Reduce：逐篇提取摘要 → 汇总生成报告）──
+ipcMain.handle('ai-analyze-folder', async (event, { folderPath, userPrompt }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+
+  // 收集文件夹内所有 md 文件（递归）
+  const mdFiles = getAllFiles(folderPath, '.md')
+  if (!mdFiles.length) {
+    return { success: false, error: '所选文件夹内没有找到任何 Markdown 笔记' }
+  }
+
+  // ── Map 阶段：逐篇提取结构化摘要 ──
+  const summaries = []
+  for (let i = 0; i < mdFiles.length; i++) {
+    const filePath = mdFiles[i]
+    const fileName = path.basename(filePath, '.md')
+
+    // 推送进度给前端
+    event.sender.send('ai-analyze-progress', {
+      current: i + 1,
+      total: mdFiles.length,
+      fileName
+    })
+
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 2000)
+      if (!body) {
+        summaries.push({ fileName, title: fileName, summary: '（文件内容为空）', keywords: [], keyPoints: [] })
+        continue
+      }
+
+      const mapPrompt = `请阅读以下笔记，提取关键信息，只输出 JSON，不要加任何其他文字：
+{"title":"笔记标题或核心主题（15字内）","keywords":["关键词1","关键词2","关键词3"],"summary":"核心内容一句话概括（60字内）","keyPoints":["要点1","要点2"]}
+
+笔记文件名：${fileName}
+笔记内容：
+${body}`
+
+      const reply = await callVolcanoAI(
+        settings.apiKey, settings.modelId, settings.endpoint,
+        [{ role: 'user', content: mapPrompt }]
+      )
+      const clean = reply.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      summaries.push({
+        fileName,
+        title: parsed.title || fileName,
+        keywords: parsed.keywords || [],
+        summary: parsed.summary || '',
+        keyPoints: parsed.keyPoints || []
+      })
+    } catch (err) {
+      summaries.push({ fileName, title: fileName, summary: `（解析失败）`, keywords: [], keyPoints: [] })
+    }
+  }
+
+  // 推送"汇总中"状态
+  event.sender.send('ai-analyze-progress', {
+    current: mdFiles.length,
+    total: mdFiles.length,
+    fileName: '正在生成报告...',
+    reducing: true
+  })
+
+  // ── Reduce 阶段：把所有摘要 + 用户需求发给 AI 生成最终内容 ──
+  const summaryText = summaries.map((s, i) =>
+    `【${i + 1}】${s.title || s.fileName}\n关键词：${(s.keywords || []).join('、') || '无'}\n摘要：${s.summary}\n要点：${(s.keyPoints || []).join('；') || '无'}`
+  ).join('\n\n')
+
+  const folderName = path.basename(folderPath)
+  const reducePrompt = `你是一个知识管理助手。以下是知识库文件夹「${folderName}」中 ${summaries.length} 篇笔记的摘要信息。
+
+${summaryText}
+
+---
+用户需求：${userPrompt}
+
+请根据用户需求，基于以上所有笔记内容，生成相应的输出。用中文回答，使用 Markdown 格式。`
+
+  try {
+    const finalReply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: reducePrompt }],
+      4000
+    )
+    return { success: true, result: finalReply, fileCount: mdFiles.length, folderName }
+  } catch (err) {
+    return { success: false, error: '生成报告失败：' + err.message }
+  }
+})

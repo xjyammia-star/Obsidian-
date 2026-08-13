@@ -29,4 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   aiImportFiles:     (args)      => ipcRenderer.invoke('ai-import-files', args),
   getProcessedFolder:(inboxPath) => ipcRenderer.invoke('get-processed-folder', inboxPath),
   clearProcessedFolder:(inboxPath)=> ipcRenderer.invoke('clear-processed-folder', inboxPath),
+  aiAnalyzeFolder:   (args)      => ipcRenderer.invoke('ai-analyze-folder', args),
+  onAnalyzeProgress: (cb)        => ipcRenderer.on('ai-analyze-progress', (_e, data) => cb(data)),
+  offAnalyzeProgress:()          => ipcRenderer.removeAllListeners('ai-analyze-progress'),
 })

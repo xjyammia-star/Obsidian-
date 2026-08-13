@@ -419,10 +419,48 @@
 <!-- AI 分析页 -->
 <div id="page-ai" class="hidden">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-    <div class="panel" style="opacity:0.5;pointer-events:none">
-      <div class="section-title">📁 知识库内容分析</div>
-      <p style="font-size:13px;color:#888780;line-height:1.8">选择一个文件夹，AI 读取所有笔记后生成分析报告，包括知识点梳理、内容摘要、知识空缺等。</p>
-      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+    <div class="panel" style="grid-column:1/-1">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="section-title" style="margin:0">📁 知识库内容分析</div>
+        <span style="font-size:12px;color:#888780" id="ai-analyze-file-count"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">选择要分析的文件夹</div>
+          <select id="analyze-folder-select" style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;" onchange="onAnalyzeFolderChange()">
+            <option value="">请先选择文件夹...</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">快捷示例（点击填入）</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <span class="chip" onclick="fillPrompt(this)">生成知识分析报告</span>
+            <span class="chip" onclick="fillPrompt(this)">内容汇总精华</span>
+            <span class="chip" onclick="fillPrompt(this)">写一篇扩展论文</span>
+            <span class="chip" onclick="fillPrompt(this)">推荐学习路径</span>
+            <span class="chip" onclick="fillPrompt(this)">找出知识空缺</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:13px;color:#5f5e5a;margin-bottom:6px">告诉 AI 你想要什么</div>
+        <textarea id="analyze-prompt" rows="3" placeholder="例如：帮我生成一份知识分析报告，梳理核心观点和知识结构&#10;或者：把这些笔记整合成一篇完整的文章&#10;或者：找出这个主题的知识空缺，推荐我下一步学什么" style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.7;"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <button class="btn-primary" onclick="doAnalyzeFolder()" id="btn-analyze">开始分析</button>
+        <div id="analyze-progress" style="font-size:13px;color:#888780;"></div>
+      </div>
+      <div id="analyze-result" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:14px;font-weight:500">分析结果</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-sm" onclick="copyAnalyzeResult()">复制内容</button>
+            <button class="btn-sm green" onclick="saveAnalyzeResult()">保存为笔记</button>
+          </div>
+        </div>
+        <div id="analyze-result-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto;"></div>
+        <div id="analyze-save-result" class="import-result hidden" style="margin-top:8px"></div>
+      </div>
     </div>
     <div class="panel" style="opacity:0.5;pointer-events:none">
       <div class="section-title">🎬 YouTube 视频转笔记</div>
@@ -577,6 +615,7 @@ function showPage(name) {
   }
   if (name === 'settings') loadAiSettings()
   if (name === 'new-note') showPage_newNote()
+  if (name === 'ai') loadAnalyzeFolders()
   if (name === 'search' && !tagCloudLoaded) loadTagCloud()
 }
 
@@ -1151,6 +1190,114 @@ async function doMoveNote() {
     el.innerHTML = `✅ 已移入知识库。<button class="open-btn" style="margin-left:8px" onclick="openInObsidian('${esc(res.path)}')">在 Obsidian 中打开</button>`
     loadOverview()
   } else { el.className = 'import-result error'; el.innerHTML = '❌ 移动失败：' + res.error }
+}
+
+/* ── AI 分析文件夹 ── */
+let analyzeResultText = ''
+let analyzeFolderPath = ''
+
+async function loadAnalyzeFolders() {
+  if (!currentVaultPath) return
+  const res = await window.api.getVaultFolders(currentVaultPath)
+  if (!res.success) return
+  const sel = document.getElementById('analyze-folder-select')
+  sel.innerHTML = '<option value="">请选择文件夹...</option>' +
+    res.folders.map(f => '<option value="' + f.value + '">' + f.label + '</option>').join('')
+}
+
+function onAnalyzeFolderChange() {
+  const sel = document.getElementById('analyze-folder-select')
+  analyzeFolderPath = sel.value
+  document.getElementById('ai-analyze-file-count').textContent = ''
+  if (!analyzeFolderPath) return
+}
+
+function fillPrompt(el) {
+  document.getElementById('analyze-prompt').value = el.textContent
+}
+
+async function doAnalyzeFolder() {
+  const folderPath = document.getElementById('analyze-folder-select').value
+  const userPrompt = document.getElementById('analyze-prompt').value.trim()
+  if (!folderPath) { alert('请先选择要分析的文件夹'); return }
+  if (!userPrompt) { alert('请先告诉 AI 你想要什么'); return }
+
+  const btn = document.getElementById('btn-analyze')
+  const progressEl = document.getElementById('analyze-progress')
+  const resultEl = document.getElementById('analyze-result')
+  const contentEl = document.getElementById('analyze-result-content')
+  const saveEl = document.getElementById('analyze-save-result')
+
+  btn.disabled = true; btn.textContent = '分析中...'
+  resultEl.classList.add('hidden')
+  saveEl.classList.add('hidden')
+  progressEl.textContent = '准备中...'
+  analyzeResultText = ''
+
+  window.api.onAnalyzeProgress(function(data) {
+    var current = data.current, total = data.total, fileName = data.fileName, reducing = data.reducing
+    if (reducing) {
+      progressEl.textContent = '正在生成报告，请稍候...'
+    } else {
+      progressEl.textContent = '正在分析 ' + current + ' / ' + total + '：' + fileName
+    }
+  })
+
+  const res = await window.api.aiAnalyzeFolder({ folderPath, userPrompt })
+  window.api.offAnalyzeProgress()
+
+  btn.disabled = false; btn.textContent = '开始分析'
+
+  if (!res.success) {
+    progressEl.textContent = '❌ ' + res.error
+    return
+  }
+
+  progressEl.textContent = '✅ 完成！共分析了 ' + res.fileCount + ' 篇笔记'
+  analyzeResultText = res.result
+  contentEl.textContent = res.result
+  resultEl.classList.remove('hidden')
+}
+
+function copyAnalyzeResult() {
+  if (!analyzeResultText) return
+  navigator.clipboard.writeText(analyzeResultText)
+    .then(() => alert('内容已复制到剪贴板'))
+    .catch(() => alert('复制失败，请手动复制'))
+}
+
+async function saveAnalyzeResult() {
+  if (!analyzeResultText || !currentVaultPath) return
+  const targetDir = currentInboxPath || currentVaultPath
+  const sel = document.getElementById('analyze-folder-select')
+  const folderLabel = sel.selectedOptions[0] ? sel.selectedOptions[0].text : '分析'
+  const safeFolderName = folderLabel.replace(/[\/\:*?"<>|]/g, '-')
+  const date = new Date().toISOString().slice(0, 10)
+  const title = 'AI分析-' + safeFolderName + '-' + date
+  const saveEl = document.getElementById('analyze-save-result')
+  saveEl.classList.remove('hidden')
+  saveEl.className = 'import-result'
+  saveEl.textContent = '保存中...'
+  try {
+    const res = await window.api.createNote({
+      vaultPath: currentVaultPath,
+      targetDir: targetDir,
+      title: title,
+      template: 'blank',
+      body: analyzeResultText
+    })
+    if (res.success) {
+      saveEl.className = 'import-result success'
+      const safePath = res.path.replace(/'/g, "\'")
+      saveEl.innerHTML = '✅ 已保存。<button class="open-btn" style="margin-left:8px" onclick="openFile(\'' + safePath + '\')">📂 文件管理器查看</button>'
+    } else {
+      saveEl.className = 'import-result error'
+      saveEl.textContent = '❌ 保存失败：' + res.error
+    }
+  } catch(e) {
+    saveEl.className = 'import-result error'
+    saveEl.textContent = '❌ 保存失败：' + e.message
+  }
 }
 
 /* ── 工具函数 ── */
