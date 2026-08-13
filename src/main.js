@@ -20,6 +20,8 @@ function createWindow() {
   })
   mainWindow.loadFile(path.join(__dirname, 'index.html'))
   mainWindow.webContents.openDevTools()
+
+  // 主进程监听渲染进程的 drop 事件，获取文件路径
 }
 
 app.whenReady().then(() => {
