@@ -252,8 +252,10 @@ ipcMain.on('renderer-files-dropped', (event, paths) => {
 // -- resolve-dropped-files: 用文件元信息在磁盘上搜索完整路径 --
 ipcMain.handle('resolve-dropped-files', async (event, fileInfos) => {
   console.log('[MAIN] resolve-dropped-files called, fileInfos:', JSON.stringify(fileInfos))
-  const settings = store.get('settings', {})
-  const searchDirs = [settings.vaultPath, settings.inboxPath].filter(Boolean)
+  const vaultPath = store.get('vaultPath', null)
+  const inboxPath = store.get('inboxPath', null)
+  console.log('[MAIN] searchDirs:', vaultPath, inboxPath)
+  const searchDirs = [vaultPath, inboxPath].filter(Boolean)
   const results = []
   for (const info of fileInfos) {
     let found = null
