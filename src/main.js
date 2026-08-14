@@ -957,17 +957,26 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
 
   try {
     // Step 1: 上传文件到 Files API
-    event.sender.send('audio-note-progress', { step: 'upload', msg: '正在上传文件...' })
+    event.sender.send('audio-note-progress', { step: 'upload', msg: '正在上传文件（可能需要几十秒）...' })
     const fileId = await uploadFileToArk(settings.apiKey, endpoint, filePath)
+
+    // Step 1.5: 等待文件处理完毕（status 变为 active）
+    event.sender.send('audio-note-progress', { step: 'upload', msg: '文件上传成功，等待处理完毕...' })
+    await waitFileActive(settings.apiKey, endpoint, fileId)
 
     // Step 2: 调用多模态模型转录+理解
     event.sender.send('audio-note-progress', { step: 'transcribe', msg: '正在识别语音内容...' })
     const fileName = path.basename(filePath)
     const transcribePrompt = '请完整转录这个音频/视频文件中的所有语音内容，输出完整的转录文本，不要遗漏任何内容，保持自然段落分隔。只输出转录文本，不要加任何说明。'
-    const transcript = await callArkMultimodal(settings.apiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
+    const transcriptRaw = await callArkMultimodal(settings.apiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
 
-    if (!transcript || transcript.trim().length < 10) {
-      return { success: false, error: '未能识别到语音内容，请确认文件中有清晰的语音' }
+    // 如果是空或者错误信息，直接返回原始内容方便调试
+    if (!transcriptRaw) {
+      return { success: false, error: '模型返回了空响应，请确认音频模型ID是否正确，文件是否有语音内容' }
+    }
+    const transcript = transcriptRaw.trim()
+    if (transcript.length < 5) {
+      return { success: false, error: '转录结果过短（' + transcript.length + '字），原始响应：' + JSON.stringify(transcriptRaw) }
     }
 
     // Step 3: 用 DeepSeek 整理成结构化笔记
@@ -986,6 +995,40 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
     return { success: false, error: '处理失败：' + err.message }
   }
 })
+
+// 等待文件状态变为 active（上传后服务端需要处理）
+function waitFileActive(apiKey, endpoint, fileId) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0
+    const maxAttempts = 30  // 最多等 60 秒
+    function check() {
+      attempts++
+      if (attempts > maxAttempts) { reject(new Error('文件处理超时，请重试')); return }
+      const url = new URL(endpoint + '/files/' + fileId)
+      const options = {
+        hostname: url.hostname, path: url.pathname, method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + apiKey }
+      }
+      const req = https.request(options, res => {
+        let data = ''
+        res.on('data', chunk => data += chunk)
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data)
+            if (json.status === 'active') { resolve(); return }
+            if (json.status === 'error') { reject(new Error('文件处理失败：' + JSON.stringify(json))); return }
+            // 还在处理中，等 2 秒再试
+            setTimeout(check, 2000)
+          } catch (e) { reject(e) }
+        })
+      })
+      req.on('error', reject)
+      req.end()
+    }
+    // 先等 1 秒再开始轮询
+    setTimeout(check, 1000)
+  })
+}
 
 // 上传文件到火山方舟 Files API，返回 file_id
 function uploadFileToArk(apiKey, endpoint, filePath) {
@@ -1074,8 +1117,10 @@ function callArkMultimodal(apiKey, modelId, endpoint, fileId, prompt, filePath) 
       res.on('end', () => {
         try {
           const json = JSON.parse(data)
-          resolve(json.choices?.[0]?.message?.content || '')
-        } catch (e) { reject(e) }
+          if (json.error) { reject(new Error('API错误: ' + JSON.stringify(json.error))); return }
+          const content = json.choices?.[0]?.message?.content
+          resolve(content !== undefined ? content : null)
+        } catch (e) { reject(new Error('解析响应失败: ' + data.slice(0, 200))) }
       })
     })
     req.on('error', reject)
