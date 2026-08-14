@@ -549,7 +549,8 @@ ipcMain.handle('get-ai-settings', () => {
     aiClassifyEnabled: false,
     reminderEnabled: false,
     reminderAdvance: 0,
-    inboxFolder: ''
+    inboxFolder: '',
+    ytCookiesFile: ''
   })
 })
 
@@ -1144,6 +1145,19 @@ function buildAnalyzeTree(dir, rootPath, depth) {
   return node
 }
 
+// ── 选择 YouTube Cookies 文件 ──
+ipcMain.handle('select-cookies-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择 YouTube Cookies 文件',
+    filters: [{ name: 'Cookies 文件', extensions: ['txt'] }, { name: '所有文件', extensions: ['*'] }],
+    properties: ['openFile']
+  })
+  if (!result.canceled && result.filePaths.length > 0) {
+    return { success: true, path: result.filePaths[0] }
+  }
+  return { success: false }
+})
+
 // ── YouTube 字幕抓取（基于 yt-dlp）──
 const { execFile, execSync } = require('child_process')
 const os = require('os')
@@ -1191,8 +1205,14 @@ async function ensureYtDlp(sendProgress) {
 }
 
 function runYtDlp(ytDlpPath, args) {
-  // 自动注入 --js-runtimes node，解决 YouTube JS 运行时警告
-  const fullArgs = ['--js-runtimes', 'node'].concat(args)
+  // 自动注入 --js-runtimes node
+  let fullArgs = ['--js-runtimes', 'node'].concat(args)
+  // 自动注入 cookies 文件（如果已配置）
+  const settings = store.get('aiSettings', {})
+  const cookiesFile = settings.ytCookiesFile || ''
+  if (cookiesFile && require('fs').existsSync(cookiesFile)) {
+    fullArgs = ['--cookies', cookiesFile].concat(fullArgs)
+  }
   return new Promise((resolve, reject) => {
     execFile(ytDlpPath, fullArgs, { timeout: 120000, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && !stdout) { reject(new Error(stderr || err.message)); return }

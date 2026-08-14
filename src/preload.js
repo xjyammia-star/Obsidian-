@@ -61,4 +61,5 @@ contextBridge.exposeInMainWorld('api', {
   youtubeToNote:     (args)      => ipcRenderer.invoke('youtube-to-note', args),
   onYoutubeProgress: (cb)        => ipcRenderer.on('youtube-note-progress', (_e, msg) => cb(msg)),
   offYoutubeProgress:()          => ipcRenderer.removeAllListeners('youtube-note-progress'),
+  selectCookiesFile: ()          => ipcRenderer.invoke('select-cookies-file'),
 })

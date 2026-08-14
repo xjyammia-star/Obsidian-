@@ -697,6 +697,13 @@
       <span style="font-size:11px;color:#888780;margin-left:8px;white-space:nowrap">用于音频/视频转笔记</span>
     </div>
     <div class="settings-row">
+      <div class="settings-label">🍪 YouTube Cookies</div>
+      <input type="text" id="yt-cookies-file" placeholder="cookies.txt 文件路径（选填，用于访问有地区限制的视频）"
+        style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
+        onchange="saveAiSettings()">
+      <button class="btn-sm" style="margin-left:8px;white-space:nowrap" onclick="selectYtCookiesFile()">选择文件</button>
+    </div>
+    <div class="settings-row">
       <div class="settings-label">🌐 接入点</div>
       <input type="text" id="ai-endpoint" placeholder="https://ark.cn-beijing.volces.com/api/v3"
         style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
@@ -1860,6 +1867,8 @@ async function loadAiSettings() {
   document.getElementById('reminder-advance-row').style.display = s.reminderEnabled ? 'flex' : 'none'
   const inboxFolderEl = document.getElementById('set-inbox-folder')
   if (inboxFolderEl && s.inboxFolder) { inboxFolderEl.textContent = s.inboxFolder; inboxFolderEl.classList.remove('empty') }
+  const cookiesEl = document.getElementById('yt-cookies-file')
+  if (cookiesEl) cookiesEl.value = s.ytCookiesFile || ''
 }
 
 async function saveAiSettings() {
@@ -1871,11 +1880,19 @@ async function saveAiSettings() {
     aiClassifyEnabled: document.getElementById('ai-classify-toggle').checked,
     reminderEnabled:   document.getElementById('reminder-toggle').checked,
     reminderAdvance:   parseInt(document.getElementById('reminder-advance').value) || 0,
-    inboxFolder:       document.getElementById('set-inbox-folder').textContent.includes('未设置') ? '' : document.getElementById('set-inbox-folder').textContent
+    inboxFolder:       document.getElementById('set-inbox-folder').textContent.includes('未设置') ? '' : document.getElementById('set-inbox-folder').textContent,
+    ytCookiesFile:     (document.getElementById('yt-cookies-file')?.value || '').trim()
   }
   await window.api.saveAiSettings(s)
-  // 提醒行显示/隐藏
   document.getElementById('reminder-advance-row').style.display = s.reminderEnabled ? 'flex' : 'none'
+}
+
+async function selectYtCookiesFile() {
+  const res = await window.api.selectCookiesFile()
+  if (res && res.success) {
+    document.getElementById('yt-cookies-file').value = res.path
+    await saveAiSettings()
+  }
 }
 
 async function selectInboxFolder() {
