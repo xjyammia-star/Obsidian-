@@ -58,4 +58,7 @@ contextBridge.exposeInMainWorld('api', {
   onAudioNoteProgress:(cb)       => ipcRenderer.on('audio-note-progress', (_e, data) => cb(data)),
   offAudioNoteProgress:()        => ipcRenderer.removeAllListeners('audio-note-progress'),
   onFilesDropped:    (cb)        => { window.__onFilesDropped = cb },
+  youtubeToNote:     (args)      => ipcRenderer.invoke('youtube-to-note', args),
+  onYoutubeProgress: (cb)        => ipcRenderer.on('youtube-note-progress', (_e, msg) => cb(msg)),
+  offYoutubeProgress:()          => ipcRenderer.removeAllListeners('youtube-note-progress'),
 })

@@ -1143,3 +1143,201 @@ function buildAnalyzeTree(dir, rootPath, depth) {
   } catch (_) {}
   return node
 }
+
+// ── YouTube 字幕抓取 ──
+function fetchYouTubePage(videoUrl) {
+  return new Promise((resolve, reject) => {
+    const https = require('https')
+    const url = new URL(videoUrl)
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    }
+    const req = https.request(options, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        fetchYouTubePage(res.headers.location).then(resolve).catch(reject)
+        return
+      }
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => resolve(data))
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('请求超时')) })
+    req.end()
+  })
+}
+
+function parseYouTubePlayerResponse(html) {
+  // 提取 ytInitialPlayerResponse
+  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});(?:var|const|let|\s*<)/)
+  if (!match) {
+    // 备用方案
+    const match2 = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\});\s*(?:var|if|<)/)
+    if (!match2) return null
+    try { return JSON.parse(match2[1]) } catch { return null }
+  }
+  try { return JSON.parse(match[1]) } catch { return null }
+}
+
+function extractVideoInfo(playerResponse) {
+  const details = playerResponse?.videoDetails || {}
+  return {
+    title: details.title || '未知标题',
+    author: details.author || '未知作者',
+    lengthSeconds: parseInt(details.lengthSeconds || '0'),
+    description: (details.shortDescription || '').slice(0, 500)
+  }
+}
+
+function fetchCaptionTrack(trackUrl) {
+  return new Promise((resolve, reject) => {
+    const https = require('https')
+    const url = new URL(trackUrl)
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      }
+    }
+    const req = https.request(options, res => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => resolve(data))
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('字幕下载超时')) })
+    req.end()
+  })
+}
+
+function parseCaptionXml(xml) {
+  // 解析 YouTube 字幕 XML 格式
+  const lines = []
+  const regex = /<text[^>]*start="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g
+  let m
+  while ((m = regex.exec(xml)) !== null) {
+    const text = m[2]
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+      .replace(/<[^>]+>/g, '').trim()
+    if (text) lines.push(text)
+  }
+  return lines.join(' ')
+}
+
+ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+
+  const sendProgress = (msg) => {
+    try { event.sender.send('youtube-note-progress', msg) } catch (_) {}
+  }
+
+  try {
+    // 1. 规范化 URL
+    sendProgress('正在获取视频信息...')
+    let cleanUrl = videoUrl.trim()
+    if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl
+    // 支持短链接 youtu.be
+    if (cleanUrl.includes('youtu.be/')) {
+      const vid = cleanUrl.split('youtu.be/')[1].split('?')[0]
+      cleanUrl = 'https://www.youtube.com/watch?v=' + vid
+    }
+
+    // 2. 抓取页面
+    const html = await fetchYouTubePage(cleanUrl)
+    if (!html || html.length < 1000) {
+      return { success: false, error: '无法获取视频页面，请检查链接是否正确' }
+    }
+
+    // 3. 解析 playerResponse
+    const playerResponse = parseYouTubePlayerResponse(html)
+    if (!playerResponse) {
+      return { success: false, error: '无法解析视频数据，YouTube 可能更新了页面结构' }
+    }
+
+    const videoInfo = extractVideoInfo(playerResponse)
+    sendProgress(`已获取视频：${videoInfo.title}`)
+
+    // 4. 获取字幕轨道列表
+    const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []
+    if (!captionTracks.length) {
+      return { success: false, error: '该视频没有字幕（既无自动生成字幕，也无手动字幕），无法转录。\n\n视频信息：' + videoInfo.title }
+    }
+
+    // 优先选中文字幕，其次英文，再次任意
+    sendProgress('正在下载字幕...')
+    const zhTrack = captionTracks.find(t => t.languageCode?.startsWith('zh'))
+    const enTrack = captionTracks.find(t => t.languageCode?.startsWith('en'))
+    const selectedTrack = zhTrack || enTrack || captionTracks[0]
+    const trackLang = selectedTrack.languageCode || 'unknown'
+
+    const captionXml = await fetchCaptionTrack(selectedTrack.baseUrl)
+    const rawText = parseCaptionXml(captionXml)
+
+    if (!rawText || rawText.length < 20) {
+      return { success: false, error: '字幕内容为空或过短，无法生成笔记' }
+    }
+
+    // 5. 调 DeepSeek 整理笔记
+    sendProgress('AI 正在整理笔记...')
+    const duration = Math.floor(videoInfo.lengthSeconds / 60) + '分钟'
+    const langNote = trackLang.startsWith('zh') ? '字幕语言：中文' : `字幕语言：${trackLang}，请用中文输出笔记`
+
+    const systemPrompt = `你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。`
+    const notePrompt = userPrompt && userPrompt.trim()
+      ? userPrompt.trim()
+      : '请整理成结构清晰的笔记，包含：核心主题、主要观点、重要细节、总结'
+
+    const userMsg = `以下是 YouTube 视频的字幕文本，请帮我整理成笔记。
+
+视频信息：
+- 标题：${videoInfo.title}
+- 作者：${videoInfo.author}
+- 时长：${duration}
+- ${langNote}
+
+笔记要求：${notePrompt}
+
+字幕内容（前8000字）：
+${rawText.slice(0, 8000)}`
+
+    const reply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+      4000
+    )
+
+    sendProgress('完成！')
+
+    const formatDuration = (s) => {
+      const m = Math.floor(s / 60), sec = s % 60
+      return m + '分' + sec + '秒'
+    }
+
+    return {
+      success: true,
+      note: reply,
+      videoTitle: videoInfo.title,
+      author: videoInfo.author,
+      duration: formatDuration(videoInfo.lengthSeconds),
+      captionLang: trackLang,
+      rawCaption: rawText.slice(0, 3000)
+    }
+
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
