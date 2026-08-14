@@ -758,7 +758,7 @@ function ffShowActionBar(show) {
   bar.style.display = show ? 'flex' : 'none'
   if (show) ffUpdateCount()
 }
-function ffToggleItem(rowEl, event) {
+function ffToggleItem(rowEl) {
   if (!rowEl || !rowEl.classList.contains('folder-file-item')) return
   const cb = rowEl.querySelector('.ff-checkbox')
   if (!cb) return
@@ -771,10 +771,6 @@ function ffUpdateCount() {
   const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
   const countEl = document.getElementById('ff-select-count')
   if (countEl) countEl.textContent = checked.length > 0 ? `已选 ${checked.length} / ${all.length}` : ''
-  document.querySelectorAll('#folder-files .folder-file-item').forEach(row => {
-    const cb = row.querySelector('.ff-checkbox')
-    if (cb) row.classList.toggle('ff-selected', cb.checked)
-  })
 }
 function ffSelectAll(select) {
   document.querySelectorAll('#folder-files .ff-checkbox').forEach(cb => { cb.checked = select })
@@ -821,8 +817,8 @@ async function loadFilesByType(type, label, cardEl) {
       const icon = fileIcon(f.name)
       const isMd = f.name.endsWith('.md')
       const ep = esc(f.path)
-      return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
-        <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
+      return `<div class="folder-file-item" onclick="ffToggleItem(this)">
+        <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
         <span class="ff-icon">${icon}</span>
         <span class="ff-name" title="${f.relativePath}">${f.name}</span>
         <span class="ff-meta">${f.mtime}</span>
@@ -845,8 +841,8 @@ function loadRecentFiles(recent) {
   el.innerHTML = _cachedRecent.map(f => {
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
     const ep = esc(f.path)
-    return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
-      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
+    return `<div class="folder-file-item" onclick="ffToggleItem(this)">
+      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
@@ -870,8 +866,8 @@ async function loadFolderFiles(folderPath, folderName) {
     if (f.isDir) return `<div class="folder-file-item"><span class="ff-icon">📁</span><span class="ff-name">${f.name}</span></div>`
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
     const ep = esc(f.path)
-    return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
-      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
+    return `<div class="folder-file-item" onclick="ffToggleItem(this)">
+      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
