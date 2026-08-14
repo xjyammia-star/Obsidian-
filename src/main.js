@@ -1144,95 +1144,59 @@ function buildAnalyzeTree(dir, rootPath, depth) {
   return node
 }
 
-// ── YouTube 字幕抓取 ──
-function fetchYouTubePage(videoUrl) {
+// ── YouTube 字幕抓取（基于 yt-dlp）──
+const { execFile, execSync } = require('child_process')
+const os = require('os')
+
+function getYtDlpPath() {
+  // 优先用项目目录下的 yt-dlp
+  const localPath = path.join(__dirname, '..', 'yt-dlp.exe')
+  if (fs.existsSync(localPath)) return localPath
+  // 再找系统 PATH
+  try {
+    const which = execSync('where yt-dlp', { timeout: 3000 }).toString().trim().split('\n')[0].trim()
+    if (which) return which
+  } catch (_) {}
+  return null
+}
+
+async function ensureYtDlp(sendProgress) {
+  const existing = getYtDlpPath()
+  if (existing) return existing
+
+  // 自动下载 yt-dlp.exe 到项目目录
+  sendProgress('首次使用：正在自动安装 yt-dlp（约 10MB，只需一次）...')
+  const destPath = path.join(__dirname, '..', 'yt-dlp.exe')
   return new Promise((resolve, reject) => {
     const https = require('https')
-    const url = new URL(videoUrl)
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      }
+    const url = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    const followRedirect = (urlStr) => {
+      const u = new URL(urlStr)
+      const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+        headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          followRedirect(res.headers.location); return
+        }
+        const file = fs.createWriteStream(destPath)
+        res.pipe(file)
+        file.on('finish', () => { file.close(); resolve(destPath) })
+        file.on('error', reject)
+      })
+      req.on('error', reject)
+      req.setTimeout(60000, () => { req.destroy(); reject(new Error('下载超时')) })
+      req.end()
     }
-    const req = https.request(options, res => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchYouTubePage(res.headers.location).then(resolve).catch(reject)
-        return
-      }
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => resolve(data))
-    })
-    req.on('error', reject)
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('请求超时')) })
-    req.end()
+    followRedirect(url)
   })
 }
 
-function parseYouTubePlayerResponse(html) {
-  // 提取 ytInitialPlayerResponse
-  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});(?:var|const|let|\s*<)/)
-  if (!match) {
-    // 备用方案
-    const match2 = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\});\s*(?:var|if|<)/)
-    if (!match2) return null
-    try { return JSON.parse(match2[1]) } catch { return null }
-  }
-  try { return JSON.parse(match[1]) } catch { return null }
-}
-
-function extractVideoInfo(playerResponse) {
-  const details = playerResponse?.videoDetails || {}
-  return {
-    title: details.title || '未知标题',
-    author: details.author || '未知作者',
-    lengthSeconds: parseInt(details.lengthSeconds || '0'),
-    description: (details.shortDescription || '').slice(0, 500)
-  }
-}
-
-function fetchCaptionTrack(trackUrl) {
+function runYtDlp(ytDlpPath, args) {
   return new Promise((resolve, reject) => {
-    const https = require('https')
-    const url = new URL(trackUrl)
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-      }
-    }
-    const req = https.request(options, res => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => resolve(data))
+    execFile(ytDlpPath, args, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err && !stdout) { reject(new Error(stderr || err.message)); return }
+      resolve(stdout || '')
     })
-    req.on('error', reject)
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('字幕下载超时')) })
-    req.end()
   })
-}
-
-function parseCaptionXml(xml) {
-  // 解析 YouTube 字幕 XML 格式
-  const lines = []
-  const regex = /<text[^>]*start="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g
-  let m
-  while ((m = regex.exec(xml)) !== null) {
-    const text = m[2]
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-      .replace(/<[^>]+>/g, '').trim()
-    if (text) lines.push(text)
-  }
-  return lines.join(' ')
 }
 
 ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
@@ -1245,58 +1209,81 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
     try { event.sender.send('youtube-note-progress', msg) } catch (_) {}
   }
 
+  let tmpDir = null
   try {
     // 1. 规范化 URL
-    sendProgress('正在获取视频信息...')
     let cleanUrl = videoUrl.trim()
     if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl
-    // 支持短链接 youtu.be
     if (cleanUrl.includes('youtu.be/')) {
       const vid = cleanUrl.split('youtu.be/')[1].split('?')[0]
       cleanUrl = 'https://www.youtube.com/watch?v=' + vid
     }
 
-    // 2. 抓取页面
-    const html = await fetchYouTubePage(cleanUrl)
-    if (!html || html.length < 1000) {
-      return { success: false, error: '无法获取视频页面，请检查链接是否正确' }
-    }
+    // 2. 确保 yt-dlp 可用
+    const ytDlpPath = await ensureYtDlp(sendProgress)
+    sendProgress('正在获取视频信息...')
 
-    // 3. 解析 playerResponse
-    const playerResponse = parseYouTubePlayerResponse(html)
-    if (!playerResponse) {
-      return { success: false, error: '无法解析视频数据，YouTube 可能更新了页面结构' }
-    }
+    // 3. 获取视频信息（JSON）
+    const infoJson = await runYtDlp(ytDlpPath, [
+      '--dump-json', '--no-playlist', '--no-warnings', cleanUrl
+    ])
+    const info = JSON.parse(infoJson)
+    const videoTitle = info.title || '未知标题'
+    const author = info.uploader || info.channel || '未知作者'
+    const lengthSeconds = info.duration || 0
 
-    const videoInfo = extractVideoInfo(playerResponse)
-    sendProgress(`已获取视频：${videoInfo.title}`)
+    sendProgress(`已获取视频：${videoTitle}`)
 
-    // 4. 获取字幕轨道列表
-    const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []
-    if (!captionTracks.length) {
-      return { success: false, error: '该视频没有字幕（既无自动生成字幕，也无手动字幕），无法转录。\n\n视频信息：' + videoInfo.title }
-    }
+    // 4. 下载字幕到临时目录
+    tmpDir = path.join(os.tmpdir(), 'yt-captions-' + Date.now())
+    fs.mkdirSync(tmpDir, { recursive: true })
 
-    // 优先选中文字幕，其次英文，再次任意
     sendProgress('正在下载字幕...')
-    const zhTrack = captionTracks.find(t => t.languageCode?.startsWith('zh'))
-    const enTrack = captionTracks.find(t => t.languageCode?.startsWith('en'))
-    const selectedTrack = zhTrack || enTrack || captionTracks[0]
-    const trackLang = selectedTrack.languageCode || 'unknown'
 
-    const captionXml = await fetchCaptionTrack(selectedTrack.baseUrl)
-    const rawText = parseCaptionXml(captionXml)
+    // 优先手动字幕中文 → 英文 → 自动字幕中文 → 英文 → 任意
+    const subtitleArgs = [
+      '--write-subs', '--write-auto-subs',
+      '--sub-langs', 'zh-Hans,zh-Hant,zh,en,en-US,en-GB',
+      '--sub-format', 'vtt',
+      '--skip-download',
+      '--no-playlist', '--no-warnings',
+      '-o', path.join(tmpDir, 'caption'),
+      cleanUrl
+    ]
 
+    try {
+      await runYtDlp(ytDlpPath, subtitleArgs)
+    } catch (e) {
+      // 即使报错也继续，可能字幕已经部分下载成功
+    }
+
+    // 读取下载的字幕文件
+    const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'))
+    if (!files.length) {
+      return {
+        success: false,
+        error: `该视频没有可下载的字幕轨道。\n\n说明：视频画面上显示的字幕可能是「硬字幕」（直接烧录在视频画面里的），无法被程序读取，只有 YouTube 平台提供的独立字幕轨道（可在视频播放器的 CC 按钮里切换的那种）才能被读取。\n\n视频标题：${videoTitle}`
+      }
+    }
+
+    // 选择最合适的字幕文件（优先中文）
+    const zhFile = files.find(f => f.includes('.zh') || f.includes('zh-Hans') || f.includes('zh-Hant'))
+    const enFile = files.find(f => f.includes('.en'))
+    const selectedFile = zhFile || enFile || files[0]
+    const captionLang = zhFile ? 'zh' : (enFile ? 'en' : 'other')
+
+    const vttContent = fs.readFileSync(path.join(tmpDir, selectedFile), 'utf-8')
+
+    // 解析 VTT 格式字幕
+    const rawText = parseVttCaption(vttContent)
     if (!rawText || rawText.length < 20) {
       return { success: false, error: '字幕内容为空或过短，无法生成笔记' }
     }
 
-    // 5. 调 DeepSeek 整理笔记
+    // 5. 调 AI 整理笔记
     sendProgress('AI 正在整理笔记...')
-    const duration = Math.floor(videoInfo.lengthSeconds / 60) + '分钟'
-    const langNote = trackLang.startsWith('zh') ? '字幕语言：中文' : `字幕语言：${trackLang}，请用中文输出笔记`
-
-    const systemPrompt = `你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。`
+    const duration = Math.floor(lengthSeconds / 60) + '分钟' + (lengthSeconds % 60) + '秒'
+    const langNote = captionLang === 'zh' ? '字幕语言：中文' : `字幕语言：${captionLang}，请用中文输出笔记`
     const notePrompt = userPrompt && userPrompt.trim()
       ? userPrompt.trim()
       : '请整理成结构清晰的笔记，包含：核心主题、主要观点、重要细节、总结'
@@ -1304,8 +1291,8 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
     const userMsg = `以下是 YouTube 视频的字幕文本，请帮我整理成笔记。
 
 视频信息：
-- 标题：${videoInfo.title}
-- 作者：${videoInfo.author}
+- 标题：${videoTitle}
+- 作者：${author}
 - 时长：${duration}
 - ${langNote}
 
@@ -1316,28 +1303,44 @@ ${rawText.slice(0, 8000)}`
 
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+      [{ role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。' },
+       { role: 'user', content: userMsg }],
       4000
     )
 
     sendProgress('完成！')
-
-    const formatDuration = (s) => {
-      const m = Math.floor(s / 60), sec = s % 60
-      return m + '分' + sec + '秒'
-    }
-
     return {
       success: true,
       note: reply,
-      videoTitle: videoInfo.title,
-      author: videoInfo.author,
-      duration: formatDuration(videoInfo.lengthSeconds),
-      captionLang: trackLang,
+      videoTitle,
+      author,
+      duration,
+      captionLang,
       rawCaption: rawText.slice(0, 3000)
     }
 
   } catch (err) {
     return { success: false, error: err.message }
+  } finally {
+    // 清理临时目录
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
+    }
   }
 })
+
+function parseVttCaption(vtt) {
+  // 去掉 WEBVTT 头、时间戳行、空行，合并文本
+  const lines = vtt.split('\n')
+  const textLines = []
+  const timeRegex = /^\d{2}:\d{2}[:.]\d{2,3}\s*-->/
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t || t === 'WEBVTT' || timeRegex.test(t) || /^\d+$/.test(t)) continue
+    if (t.startsWith('NOTE') || t.startsWith('STYLE') || t.startsWith('REGION')) continue
+    // 去掉 VTT 内联标签如 <00:00:00.000><c>
+    const clean = t.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim()
+    if (clean && !textLines.includes(clean)) textLines.push(clean)
+  }
+  return textLines.join(' ')
+}
