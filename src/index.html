@@ -479,63 +479,71 @@
     </div>
     <div class="panel" style="grid-column:1/-1">
       <div class="section-title">🎙️ 本地视频/音频转笔记</div>
-      <p style="font-size:13px;color:#888780;line-height:1.8">选择本地视频或音频文件，AI 自动识别语音并生成结构化笔记（需在设置中配置「音频模型 ID」）。</p>
+      <p style="font-size:13px;color:#888780;line-height:1.6">选择本地视频或音频文件，AI 自动识别语音并生成结构化笔记（需在设置中配置「音频模型 ID」）。</p>
 
-      <!-- 大小限制提示 -->
-      <div style="margin-top:10px;padding:8px 12px;background:#fef9ee;border:1px solid #fac775;border-radius:8px;font-size:12px;color:#7a5c08;display:flex;gap:16px;flex-wrap:wrap">
-        <span>📏 <b>音频文件</b>：大小 ≤ 25 MB，时长 ≤ 120 分钟</span>
-        <span>🎬 <b>视频文件</b>：通过 Files API 上传，时长建议 ≤ 60 分钟</span>
-        <span>📄 支持格式：MP3、MP4、M4A、WAV、OGG、MOV、AAC、FLAC、WMA、WebM</span>
-      </div>
+      <!-- 主体：左右两栏 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:14px;align-items:start">
 
-      <!-- 文件选择区 + 提示词：左右布局 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+        <!-- 左栏：限制提示 + 文件选择 + 开始按钮 -->
         <div>
-          <div id="audio-file-zone" style="border:2px dashed #d3d1c7;border-radius:10px;padding:24px 18px;text-align:center;cursor:pointer;transition:border-color 0.12s;background:#fafaf8" onclick="selectAudioFile()">
-            <div style="font-size:32px">🎬</div>
-            <div style="font-size:13px;color:#5f5e5a;margin-top:8px;font-weight:500">点击选择文件</div>
-            <div style="font-size:11px;color:#b4b2a9;margin-top:4px">MP3 / MP4 / M4A / WAV / MOV 等</div>
+          <!-- 大小限制提示 -->
+          <div style="padding:8px 12px;background:#fef9ee;border:1px solid #fac775;border-radius:8px;font-size:11px;color:#7a5c08;line-height:1.8">
+            <div>📏 <b>音频</b>：≤ 25 MB，≤ 120 分钟 &nbsp;|&nbsp; 🎬 <b>视频</b>：建议 ≤ 60 分钟</div>
+            <div style="margin-top:2px;color:#a07830">格式：MP3 / MP4 / M4A / WAV / OGG / MOV / AAC / FLAC</div>
           </div>
-          <div id="audio-file-info" style="display:none;padding:10px 14px;background:#f5f4f0;border-radius:8px;align-items:center;gap:10px">
-            <span style="font-size:20px">🎵</span>
+          <!-- 文件选择框 -->
+          <div id="audio-file-zone" style="margin-top:10px;border:2px dashed #d3d1c7;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:border-color 0.12s;background:#fafaf8" onclick="selectAudioFile()">
+            <div style="font-size:28px">🎬</div>
+            <div style="font-size:13px;color:#5f5e5a;margin-top:6px;font-weight:500">点击选择文件</div>
+          </div>
+          <!-- 已选文件信息 -->
+          <div id="audio-file-info" style="display:none;margin-top:10px;padding:10px 14px;background:#f5f4f0;border-radius:8px;align-items:center;gap:10px">
+            <span style="font-size:18px">🎵</span>
             <div style="flex:1;min-width:0">
               <div id="audio-file-name" style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-              <div id="audio-file-size" style="font-size:11px;color:#888780;margin-top:2px"></div>
+              <div id="audio-file-size" style="font-size:11px;color:#888780;margin-top:1px"></div>
             </div>
-            <button class="btn-sm" onclick="clearAudioFile()" style="color:#a32d2d;border-color:#f5b3b3;flex-shrink:0">✕ 移除</button>
+            <button class="btn-sm" onclick="clearAudioFile()" style="color:#a32d2d;border-color:#f5b3b3;flex-shrink:0">✕</button>
+          </div>
+          <!-- 开始转换按钮 -->
+          <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+            <button class="btn-primary" onclick="doAudioToNote()" id="btn-audio-note" style="padding:8px 24px">开始转换</button>
+            <div id="audio-note-progress" style="font-size:12px;color:#888780"></div>
           </div>
         </div>
-        <div>
-          <div style="font-size:12px;color:#888780;margin-bottom:6px">自定义笔记要求（选填）</div>
-          <textarea id="audio-note-prompt" rows="4" placeholder="例如：这是一段英语课程录音，请用中文整理笔记&#10;或：重点提取其中的行动建议..."
-            style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
-          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">
-            <span onclick="setAudioPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📝 核心观点</span>
-            <span onclick="setAudioPrompt('这是一段课程/讲座录音，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📚 课程笔记</span>
-            <span onclick="setAudioPrompt('这是一段会议录音，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📋 会议纪要</span>
-            <span onclick="setAudioPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">✏️ 仅整理格式</span>
-          </div>
-        </div>
-      </div>
 
-      <!-- 操作按钮 -->
-      <div style="display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid #f1efe8">
-        <button class="btn-primary" onclick="doAudioToNote()" id="btn-audio-note" style="padding:8px 24px">开始转换</button>
-        <div id="audio-note-progress" style="font-size:13px;color:#888780"></div>
-      </div>
+        <!-- 右栏：自定义要求 + 转换结果（上下排列在同一列） -->
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <!-- 自定义提示词 -->
+          <div>
+            <div style="font-size:12px;color:#888780;margin-bottom:5px">自定义笔记要求（选填）</div>
+            <textarea id="audio-note-prompt" rows="3" placeholder="例如：这是一段英语课程录音，请用中文整理笔记&#10;或：重点提取其中的行动建议..."
+              style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">
+              <span onclick="setAudioPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📝 核心观点</span>
+              <span onclick="setAudioPrompt('这是一段课程/讲座录音，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📚 课程笔记</span>
+              <span onclick="setAudioPrompt('这是一段会议录音，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📋 会议纪要</span>
+              <span onclick="setAudioPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">✏️ 仅整理格式</span>
+            </div>
+          </div>
 
-      <!-- 结果区：全宽，紧接在上传区下方 -->
-      <div id="audio-note-result" class="hidden" style="margin-top:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="font-size:14px;font-weight:600;color:#2c2c2a">✅ 转换完成</div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn-sm" onclick="copyAudioNote()">📋 复制全文</button>
-            <button class="btn-sm green" onclick="saveAudioNote()" id="btn-save-audio-note">💾 保存为笔记</button>
+          <!-- 转换结果（在右栏，紧接提示词下方，转换完成后显示） -->
+          <div id="audio-note-result" class="hidden">
+            <!-- 保存提示：在输出框上方 -->
+            <div id="audio-note-save-result" style="display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
+            <!-- 标题栏 + 操作按钮 -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:13px;font-weight:600;color:#2c2c2a">✅ 转换完成</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-sm" onclick="copyAudioNote()">📋 复制</button>
+                <button class="btn-sm green" onclick="saveAudioNote()" id="btn-save-audio-note">💾 保存为笔记</button>
+              </div>
+            </div>
+            <!-- 输出内容框：全宽，不限高度 -->
+            <div id="audio-note-content" style="width:100%;background:#f5f4f0;border:1px solid #e0dfd8;border-radius:8px;padding:16px 20px;font-size:13px;line-height:1.9;white-space:pre-wrap;box-sizing:border-box"></div>
           </div>
         </div>
-        <!-- 全宽输出框，不限制高度，内容多少就显示多少 -->
-        <div id="audio-note-content" style="width:100%;background:#f5f4f0;border-radius:8px;padding:20px 24px;font-size:13px;line-height:1.9;white-space:pre-wrap;box-sizing:border-box;border:1px solid #e0dfd8"></div>
-        <div id="audio-note-save-result" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
+
       </div>
     </div>
     <div class="panel" style="opacity:0.5;pointer-events:none">
