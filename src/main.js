@@ -1191,8 +1191,10 @@ async function ensureYtDlp(sendProgress) {
 }
 
 function runYtDlp(ytDlpPath, args) {
+  // 自动注入 --js-runtimes node，解决 YouTube JS 运行时警告
+  const fullArgs = ['--js-runtimes', 'node'].concat(args)
   return new Promise((resolve, reject) => {
-    execFile(ytDlpPath, args, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(ytDlpPath, fullArgs, { timeout: 120000, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && !stdout) { reject(new Error(stderr || err.message)); return }
       resolve(stdout || '')
     })
@@ -1225,6 +1227,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
 
     // 3. 获取视频信息
     const infoJson = await runYtDlp(ytDlpPath, [
+      '--extractor-args', 'youtube:player_client=android',
       '--dump-json', '--no-playlist', '--no-warnings', cleanUrl
     ])
     const info = JSON.parse(infoJson)
@@ -1247,6 +1250,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
 
     try {
       await runYtDlp(ytDlpPath, [
+        '--extractor-args', 'youtube:player_client=android',
         '--write-subs', '--write-auto-subs',
         '--sub-langs', 'zh-Hans,zh-Hant,zh,en,en-US,en-GB',
         '--sub-format', 'vtt', '--skip-download',
@@ -1283,24 +1287,16 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
       const maxSec = Math.min(lengthSeconds, 300)
       const endTime = Math.floor(maxSec / 60) + ':' + String(maxSec % 60).padStart(2, '0')
 
+      // 使用 android 客户端下载（绕过 YouTube 403 限制），最低画质
       try {
         await runYtDlp(ytDlpPath, [
-          '--format', 'worstvideo[ext=mp4]+bestaudio/worst[ext=mp4]/worst',
-          '--download-sections', '*0:00-' + endTime,
+          '--extractor-args', 'youtube:player_client=android',
+          '--format', 'worst',
           '--no-playlist', '--no-warnings',
           '-o', videoPath, cleanUrl
         ])
-      } catch (_) {
-        // 备用：不限格式，最低画质
-        try {
-          await runYtDlp(ytDlpPath, [
-            '--format', 'worst',
-            '--no-playlist', '--no-warnings',
-            '-o', videoPath, cleanUrl
-          ])
-        } catch (e2) {
-          return { success: false, error: '视频下载失败：' + e2.message }
-        }
+      } catch (e) {
+        return { success: false, error: '视频下载失败：' + e.message }
       }
 
       if (!fs.existsSync(videoPath)) {
