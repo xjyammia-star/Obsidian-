@@ -990,26 +990,24 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
 // 上传文件到火山方舟 Files API，返回 file_id
 function uploadFileToArk(apiKey, endpoint, filePath) {
   return new Promise((resolve, reject) => {
-    const fs2 = require('fs')
-    const fileBuffer = fs2.readFileSync(filePath)
-    const fileName = require('path').basename(filePath)
-    const boundary = '----FormBoundary' + Math.random().toString(36).slice(2)
-    // 构造 multipart/form-data
-    const header = Buffer.from(
-      '--' + boundary + '\r\n' +
-      'Content-Disposition: form-data; name="file"; filename="' + fileName + '"\r\n' +
-      'Content-Type: application/octet-stream\r\n\r\n'
+    const fileBuffer = fs.readFileSync(filePath)
+    const fileName = path.basename(filePath)
+    const boundary = '----ArkBoundary' + Date.now().toString(16)
+    const CRLF = '\r\n'
+    // 正确的 multipart 结构：purpose 字段 + file 字段
+    const part1 = Buffer.from(
+      '--' + boundary + CRLF +
+      'Content-Disposition: form-data; name="purpose"' + CRLF + CRLF +
+      'user_data' + CRLF
     )
-    const footer = Buffer.from('\r\n--' + boundary + '--\r\n')
-    const bodyBuf = Buffer.concat([header, fileBuffer, footer])
+    const part2Header = Buffer.from(
+      '--' + boundary + CRLF +
+      'Content-Disposition: form-data; name="file"; filename="' + fileName + '"' + CRLF +
+      'Content-Type: application/octet-stream' + CRLF + CRLF
+    )
+    const part2Footer = Buffer.from(CRLF + '--' + boundary + '--' + CRLF)
+    const fullBody = Buffer.concat([part1, part2Header, fileBuffer, part2Footer])
     const url = new URL(endpoint + '/files')
-    // 还需要加 purpose 字段
-    const purposeChunk = Buffer.from(
-      '--' + boundary + '\r\n' +
-      'Content-Disposition: form-data; name="purpose"\r\n\r\n' +
-      'assistants\r\n'
-    )
-    const fullBody = Buffer.concat([purposeChunk, header, fileBuffer, footer])
     const options = {
       hostname: url.hostname,
       path: url.pathname,
@@ -1020,7 +1018,7 @@ function uploadFileToArk(apiKey, endpoint, filePath) {
         'Content-Length': fullBody.length
       }
     }
-    const req = require('https').request(options, res => {
+    const req = https.request(options, res => {
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
@@ -1037,18 +1035,24 @@ function uploadFileToArk(apiKey, endpoint, filePath) {
   })
 }
 
-// 调用多模态模型（doubao-seed）处理音频文件
+// 调用多模态模型（doubao-seed）处理音频/视频文件
+// 官方文档：音频用 input_audio + file_id，视频用 video_url + file_id
 function callArkMultimodal(apiKey, modelId, endpoint, fileId, prompt, filePath) {
-  const ext = require('path').extname(filePath).toLowerCase().slice(1)
+  const ext = path.extname(filePath).toLowerCase().slice(1)
   const videoExts = ['mp4','mov','avi','mkv','webm']
   const isVideo = videoExts.includes(ext)
-  const mediaType = isVideo ? 'video_file' : 'audio_file'
 
   return new Promise((resolve, reject) => {
+    let mediaContent
+    if (isVideo) {
+      mediaContent = { type: 'video_url', video_url: { file_id: fileId } }
+    } else {
+      mediaContent = { type: 'input_audio', input_audio: { file_id: fileId } }
+    }
     const messages = [{
       role: 'user',
       content: [
-        { type: mediaType, [mediaType]: { file_id: fileId } },
+        mediaContent,
         { type: 'text', text: prompt }
       ]
     }]
