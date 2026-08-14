@@ -1223,7 +1223,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
     const ytDlpPath = await ensureYtDlp(sendProgress)
     sendProgress('正在获取视频信息...')
 
-    // 3. 获取视频信息（JSON）
+    // 3. 获取视频信息
     const infoJson = await runYtDlp(ytDlpPath, [
       '--dump-json', '--no-playlist', '--no-warnings', cleanUrl
     ])
@@ -1231,80 +1231,123 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
     const videoTitle = info.title || '未知标题'
     const author = info.uploader || info.channel || '未知作者'
     const lengthSeconds = info.duration || 0
+    const duration = Math.floor(lengthSeconds / 60) + '分钟' + (lengthSeconds % 60) + '秒'
 
-    sendProgress(`已获取视频：${videoTitle}`)
+    sendProgress('已获取视频：' + videoTitle)
 
-    // 4. 下载字幕到临时目录
+    // 4. 临时目录
     tmpDir = path.join(os.tmpdir(), 'yt-captions-' + Date.now())
     fs.mkdirSync(tmpDir, { recursive: true })
 
-    sendProgress('正在下载字幕...')
-
-    // 优先手动字幕中文 → 英文 → 自动字幕中文 → 英文 → 任意
-    const subtitleArgs = [
-      '--write-subs', '--write-auto-subs',
-      '--sub-langs', 'zh-Hans,zh-Hant,zh,en,en-US,en-GB',
-      '--sub-format', 'vtt',
-      '--skip-download',
-      '--no-playlist', '--no-warnings',
-      '-o', path.join(tmpDir, 'caption'),
-      cleanUrl
-    ]
+    // 5. 尝试下载软字幕
+    sendProgress('正在尝试获取字幕轨道...')
+    let rawText = ''
+    let captionLang = ''
+    let usedVision = false
 
     try {
-      await runYtDlp(ytDlpPath, subtitleArgs)
-    } catch (e) {
-      // 即使报错也继续，可能字幕已经部分下载成功
-    }
+      await runYtDlp(ytDlpPath, [
+        '--write-subs', '--write-auto-subs',
+        '--sub-langs', 'zh-Hans,zh-Hant,zh,en,en-US,en-GB',
+        '--sub-format', 'vtt', '--skip-download',
+        '--no-playlist', '--no-warnings',
+        '-o', path.join(tmpDir, 'caption'), cleanUrl
+      ])
+    } catch (_) {}
 
-    // 读取下载的字幕文件
-    const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'))
-    if (!files.length) {
-      return {
-        success: false,
-        error: `该视频没有可下载的字幕轨道。\n\n说明：视频画面上显示的字幕可能是「硬字幕」（直接烧录在视频画面里的），无法被程序读取，只有 YouTube 平台提供的独立字幕轨道（可在视频播放器的 CC 按钮里切换的那种）才能被读取。\n\n视频标题：${videoTitle}`
+    const vttFiles = fs.readdirSync(tmpDir).filter(f => f.endsWith('.vtt'))
+
+    if (vttFiles.length > 0) {
+      // ─── 路径A：有软字幕 ───
+      const zhFile = vttFiles.find(f => f.includes('.zh') || f.includes('zh-Hans') || f.includes('zh-Hant'))
+      const enFile = vttFiles.find(f => f.includes('.en'))
+      const selectedFile = zhFile || enFile || vttFiles[0]
+      captionLang = zhFile ? 'zh' : (enFile ? 'en' : 'other')
+      const vttContent = fs.readFileSync(path.join(tmpDir, selectedFile), 'utf-8')
+      rawText = parseVttCaption(vttContent)
+      sendProgress('已获取字幕轨道，AI 整理中...')
+
+    } else {
+      // ─── 路径B：无软字幕，用 AI 视觉识别硬字幕 ───
+      if (!settings.audioModelId) {
+        return {
+          success: false,
+          error: '该视频使用的是硬字幕（烧录在画面里），需要 AI 视觉识别。\n\n请在「系统设置」中配置「音频模型 ID」（Doubao-Seed 全模态模型接入点），程序即可自动识别画面中的字幕。'
+        }
       }
+
+      sendProgress('未找到字幕轨道（硬字幕），正在下载视频片段...')
+
+      // 下载最低画质视频（前5分钟）
+      const videoPath = path.join(tmpDir, 'video.mp4')
+      const maxSec = Math.min(lengthSeconds, 300)
+      const endTime = Math.floor(maxSec / 60) + ':' + String(maxSec % 60).padStart(2, '0')
+
+      try {
+        await runYtDlp(ytDlpPath, [
+          '--format', 'worstvideo[ext=mp4]+bestaudio/worst[ext=mp4]/worst',
+          '--download-sections', '*0:00-' + endTime,
+          '--no-playlist', '--no-warnings',
+          '-o', videoPath, cleanUrl
+        ])
+      } catch (_) {
+        // 备用：不限格式，最低画质
+        try {
+          await runYtDlp(ytDlpPath, [
+            '--format', 'worst',
+            '--no-playlist', '--no-warnings',
+            '-o', videoPath, cleanUrl
+          ])
+        } catch (e2) {
+          return { success: false, error: '视频下载失败：' + e2.message }
+        }
+      }
+
+      if (!fs.existsSync(videoPath)) {
+        return { success: false, error: '视频下载失败，请检查网络连接' }
+      }
+
+      const videoMB = (fs.statSync(videoPath).size / 1024 / 1024).toFixed(1)
+      sendProgress('视频已下载（' + videoMB + 'MB），上传至 AI 识别字幕...')
+
+      // 上传到火山方舟 Files API
+      const uploadedFileId = await uploadFileToArk(
+        settings.apiKey, settings.endpoint, videoPath
+      )
+
+      sendProgress('AI 视觉识别中，请稍候（约1~2分钟）...')
+
+      // 调 Doubao 全模态模型逐帧识别字幕
+      const visionReply = await callArkMultimodal(
+        settings.apiKey, settings.audioModelId, settings.endpoint,
+        uploadedFileId,
+        '请完整提取这段视频中出现的所有字幕文字，按时间顺序排列，不要遗漏。如果是剧情视频，请提取画面底部的字幕；如果是讲座/教程，请提取演讲者的语音字幕。只输出字幕文字，不需要加时间戳或额外说明。',
+        videoPath
+      )
+
+      rawText = visionReply || ''
+      captionLang = 'zh'
+      usedVision = true
+      sendProgress('字幕识别完成，AI 整理笔记中...')
     }
 
-    // 选择最合适的字幕文件（优先中文）
-    const zhFile = files.find(f => f.includes('.zh') || f.includes('zh-Hans') || f.includes('zh-Hant'))
-    const enFile = files.find(f => f.includes('.en'))
-    const selectedFile = zhFile || enFile || files[0]
-    const captionLang = zhFile ? 'zh' : (enFile ? 'en' : 'other')
-
-    const vttContent = fs.readFileSync(path.join(tmpDir, selectedFile), 'utf-8')
-
-    // 解析 VTT 格式字幕
-    const rawText = parseVttCaption(vttContent)
-    if (!rawText || rawText.length < 20) {
-      return { success: false, error: '字幕内容为空或过短，无法生成笔记' }
+    if (!rawText || rawText.length < 10) {
+      return { success: false, error: '未能获取到字幕内容，无法生成笔记' }
     }
 
-    // 5. 调 AI 整理笔记
-    sendProgress('AI 正在整理笔记...')
-    const duration = Math.floor(lengthSeconds / 60) + '分钟' + (lengthSeconds % 60) + '秒'
-    const langNote = captionLang === 'zh' ? '字幕语言：中文' : `字幕语言：${captionLang}，请用中文输出笔记`
-    const notePrompt = userPrompt && userPrompt.trim()
-      ? userPrompt.trim()
-      : '请整理成结构清晰的笔记，包含：核心主题、主要观点、重要细节、总结'
+    // 6. 调 DeepSeek 整理笔记
+    const langNote = (captionLang === 'zh' || usedVision) ? '内容语言：中文' : ('内容语言：' + captionLang + '，请用中文输出笔记')
+    const notePrompt = (userPrompt && userPrompt.trim()) ? userPrompt.trim() : '请整理成结构清晰的笔记，包含：核心主题、主要观点、重要细节、总结'
+    const sourceNote = usedVision ? '（以下内容由 AI 视觉识别视频画面字幕获得）' : ''
 
-    const userMsg = `以下是 YouTube 视频的字幕文本，请帮我整理成笔记。
-
-视频信息：
-- 标题：${videoTitle}
-- 作者：${author}
-- 时长：${duration}
-- ${langNote}
-
-笔记要求：${notePrompt}
-
-字幕内容（前8000字）：
-${rawText.slice(0, 8000)}`
+    const userMsg = '以下是 YouTube 视频的字幕内容' + sourceNote + '，请帮我整理成笔记。\n\n视频信息：\n- 标题：' + videoTitle + '\n- 作者：' + author + '\n- 时长：' + duration + '\n- ' + langNote + '\n\n笔记要求：' + notePrompt + '\n\n字幕内容（前8000字）：\n' + rawText.slice(0, 8000)
 
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
-      [{ role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。' },
-       { role: 'user', content: userMsg }],
+      [
+        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。' },
+        { role: 'user', content: userMsg }
+      ],
       4000
     )
 
@@ -1315,14 +1358,14 @@ ${rawText.slice(0, 8000)}`
       videoTitle,
       author,
       duration,
-      captionLang,
-      rawCaption: rawText.slice(0, 3000)
+      captionLang: usedVision ? 'AI视觉识别' : captionLang,
+      rawCaption: rawText.slice(0, 3000),
+      usedVision
     }
 
   } catch (err) {
     return { success: false, error: err.message }
   } finally {
-    // 清理临时目录
     if (tmpDir) {
       try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (_) {}
     }
