@@ -75,6 +75,9 @@
     .ff-actions { display:flex; gap:4px; }
     .ff-btn { font-size:11px; color:#534ab7; background:none; border:none; cursor:pointer; padding:2px 5px; border-radius:3px; white-space:nowrap; }
     .ff-btn:hover { background:#eeedfe; }
+    .ff-checkbox { flex-shrink:0; width:15px; height:15px; accent-color:#534ab7; cursor:pointer; margin-right:2px; }
+    .folder-file-item.ff-selected { background:#eeedfe; border-radius:4px; }
+    .folder-file-item.ff-selected:hover { background:#e4e2fc; }
     .virtual-folder { display:flex; align-items:center; gap:4px; padding:4px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:#854f0b; background:#faeeda; border:1px solid #fac775; margin-bottom:6px; user-select:none; }
     .virtual-folder:hover { background:#fac775; }
     /* 标签云 */
@@ -245,7 +248,15 @@
       <div class="panel scrollable" id="folder-tree"><div class="loading">加载中...</div></div>
     </div>
     <div>
-      <div class="section-title" id="folder-files-title">最近修改</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div class="section-title" id="folder-files-title" style="margin:0;flex:1">最近修改</div>
+        <div id="ff-action-bar" style="display:none;align-items:center;gap:5px">
+          <span id="ff-select-count" style="font-size:12px;color:#888780"></span>
+          <button class="btn-sm" onclick="ffSelectAll(true)">全选</button>
+          <button class="btn-sm" onclick="ffSelectAll(false)">取消</button>
+          <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0" onclick="ffDeleteSelected()">🗑 删除选中</button>
+        </div>
+      </div>
       <div class="panel scrollable" id="folder-files"><div class="loading">加载中...</div></div>
     </div>
   </div>
@@ -740,6 +751,57 @@ async function loadOverview() {
 }
 
 let _cachedRecent = []
+
+/* ── 文件列表选择与删除（首页右侧） ── */
+function ffShowActionBar(show) {
+  const bar = document.getElementById('ff-action-bar')
+  bar.style.display = show ? 'flex' : 'none'
+  if (show) ffUpdateCount()
+}
+function ffToggleItem(rowEl, event) {
+  if (!rowEl || !rowEl.classList.contains('folder-file-item')) return
+  const cb = rowEl.querySelector('.ff-checkbox')
+  if (!cb) return
+  cb.checked = !cb.checked
+  rowEl.classList.toggle('ff-selected', cb.checked)
+  ffUpdateCount()
+}
+function ffUpdateCount() {
+  const all = document.querySelectorAll('#folder-files .ff-checkbox')
+  const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
+  const countEl = document.getElementById('ff-select-count')
+  if (countEl) countEl.textContent = checked.length > 0 ? `已选 ${checked.length} / ${all.length}` : ''
+  document.querySelectorAll('#folder-files .folder-file-item').forEach(row => {
+    const cb = row.querySelector('.ff-checkbox')
+    if (cb) row.classList.toggle('ff-selected', cb.checked)
+  })
+}
+function ffSelectAll(select) {
+  document.querySelectorAll('#folder-files .ff-checkbox').forEach(cb => { cb.checked = select })
+  ffUpdateCount()
+}
+async function ffDeleteSelected() {
+  const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
+  if (!checked.length) { alert('请先勾选要删除的文件'); return }
+  const names = [...checked].map(cb => {
+    const row = cb.closest('.folder-file-item')
+    return row ? row.querySelector('.ff-name').textContent : '未知文件'
+  })
+  const confirmed = confirm(`确定要删除以下 ${checked.length} 个文件吗？\n（文件将移入系统回收站，可恢复）\n\n${names.slice(0,10).join('\n')}${names.length > 10 ? `\n…以及另外 ${names.length - 10} 个文件` : ''}`)
+  if (!confirmed) return
+  const paths = [...checked].map(cb => cb.getAttribute('data-path'))
+  let successCount = 0, failNames = []
+  for (let i = 0; i < paths.length; i++) {
+    const res = await window.api.deleteFile(paths[i])
+    if (res && res.success) { successCount++ }
+    else { failNames.push(names[i]) }
+  }
+  if (failNames.length) {
+    alert(`${successCount} 个文件已移入回收站。\n以下文件删除失败：\n${failNames.join('\n')}`)
+  }
+  refreshAll()
+}
+
 async function loadFilesByType(type, label, cardEl) {
   // 高亮选中的卡片，取消左侧树的选中
   document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'))
@@ -758,16 +820,19 @@ async function loadFilesByType(type, label, cardEl) {
     res.files.map(f => {
       const icon = fileIcon(f.name)
       const isMd = f.name.endsWith('.md')
-      return `<div class="folder-file-item">
+      const ep = esc(f.path)
+      return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
+        <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
         <span class="ff-icon">${icon}</span>
         <span class="ff-name" title="${f.relativePath}">${f.name}</span>
         <span class="ff-meta">${f.mtime}</span>
         <span class="ff-actions">
-          <button class="ff-btn" onclick="openFile('${esc(f.path)}')">文件管理器</button>
-          ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+          <button class="ff-btn" onclick="event.stopPropagation();openFile('${ep}')">文件管理器</button>
+          ${isMd ? `<button class="ff-btn" onclick="event.stopPropagation();openInObsidian('${ep}')">Obsidian</button>` : ''}
         </span>
       </div>`
     }).join('')
+  ffShowActionBar(true)
 }
 
 function loadRecentFiles(recent) {
@@ -775,19 +840,23 @@ function loadRecentFiles(recent) {
   const el = document.getElementById('folder-files')
   document.getElementById('folder-files-title').textContent = '最近修改'
   document.querySelectorAll('.tree-item.selected').forEach(e => e.classList.remove('selected'))
+  ffShowActionBar(false)
   if (!_cachedRecent.length) { el.innerHTML = '<div class="empty-tip">暂无文件</div>'; return }
   el.innerHTML = _cachedRecent.map(f => {
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
-    return `<div class="folder-file-item">
+    const ep = esc(f.path)
+    return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
+      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
       <span class="ff-actions">
-        <button class="ff-btn" onclick="openFile('${esc(f.path)}')">访达</button>
-        ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+        <button class="ff-btn" onclick="event.stopPropagation();openFile('${ep}')">访达</button>
+        ${isMd ? `<button class="ff-btn" onclick="event.stopPropagation();openInObsidian('${ep}')">Obsidian</button>` : ''}
       </span>
     </div>`
   }).join('')
+  ffShowActionBar(true)
 }
 
 async function loadFolderFiles(folderPath, folderName) {
@@ -800,16 +869,19 @@ async function loadFolderFiles(folderPath, folderName) {
   el.innerHTML = res.items.map(f => {
     if (f.isDir) return `<div class="folder-file-item"><span class="ff-icon">📁</span><span class="ff-name">${f.name}</span></div>`
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
-    return `<div class="folder-file-item">
+    const ep = esc(f.path)
+    return `<div class="folder-file-item" onclick="ffToggleItem(this,event)">
+      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation();ffToggleItem(this.closest('.folder-file-item'),event)" onchange="ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
       <span class="ff-actions">
-        <button class="ff-btn" onclick="openFile('${esc(f.path)}')">文件管理器</button>
-        ${isMd ? `<button class="ff-btn" onclick="openInObsidian('${esc(f.path)}')">Obsidian</button>` : ''}
+        <button class="ff-btn" onclick="event.stopPropagation();openFile('${ep}')">文件管理器</button>
+        ${isMd ? `<button class="ff-btn" onclick="event.stopPropagation();openInObsidian('${ep}')">Obsidian</button>` : ''}
       </span>
     </div>`
   }).join('')
+  ffShowActionBar(true)
 }
 
 function fileIcon(name) {
