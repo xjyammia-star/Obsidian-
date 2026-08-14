@@ -1337,7 +1337,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
       const visionReply = await callArkMultimodal(
         settings.apiKey, settings.audioModelId, settings.endpoint,
         uploadedFileId,
-        '请完整提取这段视频中出现的所有字幕文字，按时间顺序排列，不要遗漏。如果是剧情视频，请提取画面底部的字幕；如果是讲座/教程，请提取演讲者的语音字幕。只输出字幕文字，不需要加时间戳或额外说明。',
+        '请完整提取这段视频中出现的所有字幕文字，按出现顺序排列。要求：1. 只输出字幕的文字内容，不要输出时间戳、序号或任何格式标记；2. 每条字幕单独一行；3. 如果没有字幕，请描述视频的主要内容。',
         videoPath
       )
 
@@ -1389,17 +1389,29 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
 })
 
 function parseVttCaption(vtt) {
-  // 去掉 WEBVTT 头、时间戳行、空行，合并文本
   const lines = vtt.split('\n')
   const textLines = []
-  const timeRegex = /^\d{2}:\d{2}[:.]\d{2,3}\s*-->/
+  const seen = new Set()
+
   for (const line of lines) {
     const t = line.trim()
-    if (!t || t === 'WEBVTT' || timeRegex.test(t) || /^\d+$/.test(t)) continue
+    // 跳过空行、头部、纯数字序号、任何包含时间戳箭头的行
+    if (!t) continue
+    if (t === 'WEBVTT' || t.startsWith('Kind:') || t.startsWith('Language:')) continue
+    if (/-->/.test(t)) continue
+    if (/^\d+$/.test(t)) continue
     if (t.startsWith('NOTE') || t.startsWith('STYLE') || t.startsWith('REGION')) continue
-    // 去掉 VTT 内联标签如 <00:00:00.000><c>
-    const clean = t.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim()
-    if (clean && !textLines.includes(clean)) textLines.push(clean)
+    // 去掉 VTT 内联标签 <00:00:00.000> <c> </c> 等
+    const clean = t
+      .replace(/<\d{2}:\d{2}:\d{2}\.\d+>/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .trim()
+    if (clean && !seen.has(clean)) {
+      seen.add(clean)
+      textLines.push(clean)
+    }
   }
   return textLines.join(' ')
 }
