@@ -472,7 +472,7 @@ ipcMain.handle('check-empty-files', async (event, vaultPath) => {
 // ── 删除文件（移到系统回收站）──
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
-    shell.trashItem(filePath)
+    await shell.trashItem(filePath)
     return { success: true }
   } catch (err) { return { success: false, error: err.message } }
 })
@@ -545,6 +545,7 @@ ipcMain.handle('get-ai-settings', () => {
     apiKey: '',
     modelId: '',
     endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    audioModelId: '',
     aiClassifyEnabled: false,
     reminderEnabled: false,
     reminderAdvance: 0,
@@ -926,6 +927,158 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
     return { success: true, result: finalReply, fileCount: mdFiles.length }
   } catch (err) { return { success: false, error: '生成报告失败：' + err.message } }
 })
+
+// ── AI 音频/视频转笔记 ──
+ipcMain.handle('select-audio-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    title: '选择音频或视频文件',
+    filters: [
+      { name: '音频/视频文件', extensions: ['mp3','mp4','m4a','wav','ogg','mov','avi','mkv','aac','flac','wma','webm'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  })
+  if (!result.canceled && result.filePaths.length > 0) {
+    const fp = result.filePaths[0]
+    const stat = fs.statSync(fp)
+    const sizeMB = (stat.size / 1024 / 1024).toFixed(1)
+    return { success: true, path: fp, name: path.basename(fp), sizeMB }
+  }
+  return { success: false }
+})
+
+ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey) return { success: false, error: '请先在系统设置中配置 API Key' }
+  const audioModelId = settings.audioModelId || ''
+  if (!audioModelId) return { success: false, error: '请先在系统设置中配置「音频/视频模型 ID」（如 doubao-seed-2.0-lite 的接入点 ID）' }
+
+  const endpoint = settings.endpoint || 'https://ark.cn-beijing.volces.com/api/v3'
+
+  try {
+    // Step 1: 上传文件到 Files API
+    event.sender.send('audio-note-progress', { step: 'upload', msg: '正在上传文件...' })
+    const fileId = await uploadFileToArk(settings.apiKey, endpoint, filePath)
+
+    // Step 2: 调用多模态模型转录+理解
+    event.sender.send('audio-note-progress', { step: 'transcribe', msg: '正在识别语音内容...' })
+    const fileName = path.basename(filePath)
+    const transcribePrompt = '请完整转录这个音频/视频文件中的所有语音内容，输出完整的转录文本，不要遗漏任何内容，保持自然段落分隔。只输出转录文本，不要加任何说明。'
+    const transcript = await callArkMultimodal(settings.apiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
+
+    if (!transcript || transcript.trim().length < 10) {
+      return { success: false, error: '未能识别到语音内容，请确认文件中有清晰的语音' }
+    }
+
+    // Step 3: 用 DeepSeek 整理成结构化笔记
+    event.sender.send('audio-note-progress', { step: 'organize', msg: '正在生成结构化笔记...' })
+    const noteModelId = settings.modelId || audioModelId
+    const noteEndpoint = endpoint
+    const basePrompt = customPrompt && customPrompt.trim()
+      ? customPrompt.trim()
+      : '请整理成结构化笔记，包含：核心主题、主要内容摘要、关键要点列表。'
+    const organizePrompt = '以下是一段音频/视频（文件名：' + fileName + '）的完整转录内容：\n\n' + transcript + '\n\n请根据以下要求生成笔记：\n' + basePrompt + '\n\n请用 Markdown 格式输出，笔记结构如下：\n1. 上半部分：AI 整理的结构化笔记（标题、摘要、关键要点）\n2. 下半部分：用 --- 分隔，标题为「原始转录文本」，附上完整转录内容。'
+    const organizedNote = await callVolcanoAI(settings.apiKey, noteModelId, noteEndpoint, [{ role: 'user', content: organizePrompt }], 4000)
+
+    event.sender.send('audio-note-progress', { step: 'done', msg: '完成！' })
+    return { success: true, result: organizedNote, transcript, fileName }
+  } catch (err) {
+    return { success: false, error: '处理失败：' + err.message }
+  }
+})
+
+// 上传文件到火山方舟 Files API，返回 file_id
+function uploadFileToArk(apiKey, endpoint, filePath) {
+  return new Promise((resolve, reject) => {
+    const fs2 = require('fs')
+    const fileBuffer = fs2.readFileSync(filePath)
+    const fileName = require('path').basename(filePath)
+    const boundary = '----FormBoundary' + Math.random().toString(36).slice(2)
+    // 构造 multipart/form-data
+    const header = Buffer.from(
+      '--' + boundary + '\r\n' +
+      'Content-Disposition: form-data; name="file"; filename="' + fileName + '"\r\n' +
+      'Content-Type: application/octet-stream\r\n\r\n'
+    )
+    const footer = Buffer.from('\r\n--' + boundary + '--\r\n')
+    const bodyBuf = Buffer.concat([header, fileBuffer, footer])
+    const url = new URL(endpoint + '/files')
+    // 还需要加 purpose 字段
+    const purposeChunk = Buffer.from(
+      '--' + boundary + '\r\n' +
+      'Content-Disposition: form-data; name="purpose"\r\n\r\n' +
+      'assistants\r\n'
+    )
+    const fullBody = Buffer.concat([purposeChunk, header, fileBuffer, footer])
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        'Content-Length': fullBody.length
+      }
+    }
+    const req = require('https').request(options, res => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          if (json.id) resolve(json.id)
+          else reject(new Error('上传失败：' + JSON.stringify(json)))
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on('error', reject)
+    req.write(fullBody)
+    req.end()
+  })
+}
+
+// 调用多模态模型（doubao-seed）处理音频文件
+function callArkMultimodal(apiKey, modelId, endpoint, fileId, prompt, filePath) {
+  const ext = require('path').extname(filePath).toLowerCase().slice(1)
+  const videoExts = ['mp4','mov','avi','mkv','webm']
+  const isVideo = videoExts.includes(ext)
+  const mediaType = isVideo ? 'video_file' : 'audio_file'
+
+  return new Promise((resolve, reject) => {
+    const messages = [{
+      role: 'user',
+      content: [
+        { type: mediaType, [mediaType]: { file_id: fileId } },
+        { type: 'text', text: prompt }
+      ]
+    }]
+    const body = JSON.stringify({ model: modelId, messages, max_tokens: 8000 })
+    const url = new URL(endpoint + '/chat/completions')
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }
+    const req = require('https').request(options, res => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data)
+          resolve(json.choices?.[0]?.message?.content || '')
+        } catch (e) { reject(e) }
+      })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
 
 function buildAnalyzeTree(dir, rootPath, depth) {
   depth = depth || 0

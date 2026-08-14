@@ -316,6 +316,7 @@
       <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
         <button class="btn-sm" onclick="selectAllInbox(true)">全选</button>
         <button class="btn-sm" onclick="selectAllInbox(false)">取消</button>
+        <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0" onclick="deleteSelectedInboxFiles()">🗑 删除选中</button>
         <span id="inbox-select-count" style="font-size:12px;color:#888780"></span>
       </div>
     </div>
@@ -340,8 +341,8 @@
   </div>
 
   <!-- 已处理提示栏（常驻显示）-->
-  <div id="processed-bar" class="hidden" style="margin-bottom:12px;padding:8px 14px;background:#faeeda;border-radius:8px;display:flex;align-items:center;gap:10px">
-    <span id="processed-bar-text" style="font-size:12px;color:#854f0b;flex:1">已整理的资料会存入「已处理」文件夹，可选择清除或保留原文件</span>
+  <div id="processed-bar" style="margin-bottom:12px;padding:8px 14px;background:#faeeda;border-radius:8px;display:flex;align-items:center;gap:10px">
+    <span id="processed-bar-text" style="font-size:12px;color:#854f0b;flex:1">已整理的文件会存入「已处理」文件夹，可自行决定保留或删除。</span>
     <button class="btn-sm" style="color:#854f0b;border-color:#fac775;white-space:nowrap" onclick="clearProcessed()">清除已处理</button>
     <button class="btn-sm" style="white-space:nowrap" onclick="openProcessedFolder()">查看文件</button>
   </div>
@@ -476,10 +477,58 @@
       <p style="font-size:13px;color:#888780;line-height:1.8">输入 YouTube 链接，AI 提取字幕并生成结构化笔记，自动打标签存入知识库。</p>
       <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
     </div>
-    <div class="panel" style="opacity:0.5;pointer-events:none">
+    <div class="panel">
       <div class="section-title">🎙️ 本地视频/音频转笔记</div>
-      <p style="font-size:13px;color:#888780;line-height:1.8">上传本地视频或音频文件，通过 Whisper 语音识别提取内容，AI 生成结构化笔记。</p>
-      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+      <p style="font-size:13px;color:#888780;line-height:1.8">选择本地视频或音频文件，AI 自动识别语音并生成结构化笔记（需在设置中配置「音频模型 ID」）。</p>
+
+      <!-- 文件选择区 -->
+      <div id="audio-file-zone" style="margin-top:14px;border:2px dashed #d3d1c7;border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.12s" onclick="selectAudioFile()">
+        <div style="font-size:28px">🎬</div>
+        <div style="font-size:13px;color:#888780;margin-top:6px">点击选择文件</div>
+        <div style="font-size:11px;color:#b4b2a9;margin-top:3px">支持 MP3、MP4、M4A、WAV、OGG、MOV 等格式</div>
+      </div>
+      <div id="audio-file-info" style="display:none;margin-top:10px;padding:10px 14px;background:#f5f4f0;border-radius:8px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🎵</span>
+        <div style="flex:1">
+          <div id="audio-file-name" style="font-size:13px;font-weight:500"></div>
+          <div id="audio-file-size" style="font-size:11px;color:#888780;margin-top:2px"></div>
+        </div>
+        <button class="btn-sm" onclick="clearAudioFile()" style="color:#a32d2d;border-color:#f5b3b3">✕ 移除</button>
+      </div>
+
+      <!-- 自定义提示词 -->
+      <div style="margin-top:14px">
+        <div style="font-size:12px;color:#888780;margin-bottom:6px">自定义笔记要求（选填）</div>
+        <textarea id="audio-note-prompt" rows="2" placeholder="例如：这是一段英语课程录音，请用中文整理笔记；或：重点提取其中的行动建议..."
+          style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+
+      <!-- 快捷示例 -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        <span onclick="setAudioPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📝 提取核心观点</span>
+        <span onclick="setAudioPrompt('这是一段课程/讲座录音，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📚 课程笔记</span>
+        <span onclick="setAudioPrompt('这是一段会议录音，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📋 会议纪要</span>
+        <span onclick="setAudioPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">✏️ 仅整理格式</span>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+        <button class="btn-primary" onclick="doAudioToNote()" id="btn-audio-note" style="padding:8px 24px">开始转换</button>
+        <div id="audio-note-progress" style="font-size:13px;color:#888780"></div>
+      </div>
+
+      <!-- 结果区 -->
+      <div id="audio-note-result" class="hidden" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:500">✅ 转换完成</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-sm" onclick="copyAudioNote()">📋 复制</button>
+            <button class="btn-sm green" onclick="saveAudioNote()">💾 保存为笔记</button>
+          </div>
+        </div>
+        <div id="audio-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:520px;overflow-y:auto"></div>
+        <div id="audio-note-save-result" class="hidden import-result" style="margin-top:8px"></div>
+      </div>
     </div>
     <div class="panel" style="opacity:0.5;pointer-events:none">
       <div class="section-title">🌐 网页内容转笔记</div>
@@ -551,6 +600,13 @@
       <input type="text" id="ai-model-id" placeholder="如 ep-20260813112220-v8v92"
         style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
         onchange="saveAiSettings()">
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">🎙️ 音频模型 ID</div>
+      <input type="text" id="ai-audio-model-id" placeholder="如 doubao-seed-2.0-lite 的接入点 ID"
+        style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
+        onchange="saveAiSettings()">
+      <span style="font-size:11px;color:#888780;margin-left:8px;white-space:nowrap">用于音频/视频转笔记</span>
     </div>
     <div class="settings-row">
       <div class="settings-label">🌐 接入点</div>
@@ -950,22 +1006,15 @@ async function loadInboxFiles() {
       </div>`).join('')
     updateInboxCount()
   }
-  // 同步检查已处理文件夹状态
-  loadProcessedStatus()
+
 }
 
-async function loadProcessedStatus() {
-  if (!currentInboxPath) return
-  const res = await window.api.getProcessedFolder(currentInboxPath)
+function showProcessedBar() {
   const bar = document.getElementById('processed-bar')
   const txt = document.getElementById('processed-bar-text')
   if (!bar || !txt) return
-  if (res.success && res.count > 0) {
-    txt.textContent = `文件已分类整理到 Obsidian，原文件（${res.count} 个）已存放到「已处理」文件夹。可选择清除或保留。`
-    bar.classList.remove('hidden')
-  } else {
-    bar.classList.add('hidden')
-  }
+  txt.textContent = '已整理的文件会存入「已处理」文件夹，可自行决定保留或删除。'
+  bar.classList.remove('hidden')
 }
 
 async function clearProcessed() {
@@ -1002,6 +1051,29 @@ function updateInboxCount() {
 function selectAllInbox(checked) {
   document.querySelectorAll('.inbox-check').forEach(cb => cb.checked = checked)
   updateInboxCount()
+}
+
+async function deleteSelectedInboxFiles() {
+  const checked = [...document.querySelectorAll('.inbox-check:checked')]
+  if (!checked.length) { alert('请先选择要删除的文件'); return }
+  if (!confirm('确定要删除选中的 ' + checked.length + ' 个文件吗？\n文件会移到系统回收站，可以恢复。')) return
+  let ok = 0, fail = 0
+  for (const cb of checked) {
+    const res = await window.api.deleteFile(cb.dataset.path)
+    if (res.success) {
+      ok++
+      const item = cb.closest('.inbox-file-item')
+      if (item) item.remove()
+    } else {
+      fail++
+    }
+  }
+  updateInboxCount()
+  const panel = document.getElementById('inbox-file-panel')
+  if (panel && !panel.querySelector('.inbox-file-item')) {
+    panel.innerHTML = '<div class="empty-tip">待处理文件库里没有文件</div>'
+  }
+  if (fail > 0) alert('已删除 ' + ok + ' 个，' + fail + ' 个失败')
 }
 
 async function pickFiles() {
@@ -1069,7 +1141,7 @@ async function doSmartImport() {
     resultEl.innerHTML = `✅ 成功导入 ${ok} 个文件${fail ? `，${fail} 个失败` : ''}`
   }
   btn.disabled = false; btn.textContent = '确认导入'
-  pendingFiles = []; renderImportList(); loadInboxFiles(); loadOverview()
+  pendingFiles = []; renderImportList(); loadInboxFiles(); loadOverview(); showProcessedBar()
 }
 function handleDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over') }
 function handleDragLeave() { document.getElementById('drop-zone').classList.remove('drag-over') }
@@ -1391,6 +1463,115 @@ window.api.onFilesDropped(function(paths) {
 /* ── 工具函数 ── */
 function openFile(p) { window.api.openFile(p) }
 function openInObsidian(p) { window.api.openInObsidian(p) }
+/* ── 音频/视频转笔记 ── */
+let currentAudioFilePath = null
+let audioNoteResultText = ''
+
+async function selectAudioFile() {
+  const res = await window.api.selectAudioFile()
+  if (!res.success) return
+  currentAudioFilePath = res.path
+  document.getElementById('audio-file-zone').style.display = 'none'
+  const info = document.getElementById('audio-file-info')
+  info.style.display = 'flex'
+  document.getElementById('audio-file-name').textContent = res.name
+  document.getElementById('audio-file-size').textContent = res.sizeMB + ' MB'
+  document.getElementById('audio-note-result').classList.add('hidden')
+  document.getElementById('audio-note-progress').textContent = ''
+}
+
+function clearAudioFile() {
+  currentAudioFilePath = null
+  document.getElementById('audio-file-zone').style.display = 'block'
+  document.getElementById('audio-file-info').style.display = 'none'
+  document.getElementById('audio-note-result').classList.add('hidden')
+  document.getElementById('audio-note-progress').textContent = ''
+}
+
+function setAudioPrompt(text) {
+  document.getElementById('audio-note-prompt').value = text
+}
+
+async function doAudioToNote() {
+  if (!currentAudioFilePath) {
+    alert('请先选择一个音频或视频文件')
+    return
+  }
+  const btn = document.getElementById('btn-audio-note')
+  const progressEl = document.getElementById('audio-note-progress')
+  const resultEl = document.getElementById('audio-note-result')
+  const contentEl = document.getElementById('audio-note-content')
+
+  btn.disabled = true
+  btn.textContent = '处理中...'
+  resultEl.classList.add('hidden')
+  audioNoteResultText = ''
+
+  window.api.offAudioNoteProgress()
+  window.api.onAudioNoteProgress(data => {
+    progressEl.textContent = data.msg || ''
+  })
+
+  const customPrompt = document.getElementById('audio-note-prompt').value.trim()
+  progressEl.textContent = '准备中...'
+
+  try {
+    const res = await window.api.aiAudioToNote({ filePath: currentAudioFilePath, customPrompt })
+    if (res.success) {
+      audioNoteResultText = res.result
+      contentEl.textContent = res.result
+      resultEl.classList.remove('hidden')
+      progressEl.textContent = ''
+    } else {
+      progressEl.textContent = '❌ ' + (res.error || '转换失败')
+      progressEl.style.color = '#a32d2d'
+    }
+  } catch (e) {
+    progressEl.textContent = '❌ 发生错误：' + e.message
+    progressEl.style.color = '#a32d2d'
+  }
+
+  btn.disabled = false
+  btn.textContent = '开始转换'
+  window.api.offAudioNoteProgress()
+}
+
+function copyAudioNote() {
+  if (!audioNoteResultText) return
+  navigator.clipboard.writeText(audioNoteResultText)
+  const btn = event.target
+  btn.textContent = '✅ 已复制'
+  setTimeout(() => { btn.textContent = '📋 复制' }, 2000)
+}
+
+async function saveAudioNote() {
+  if (!audioNoteResultText || !currentInboxPath) return
+  const fileName = (currentAudioFilePath ? require('path').basename(currentAudioFilePath, require('path').extname(currentAudioFilePath)) : '音频笔记')
+  const saveEl = document.getElementById('audio-note-save-result')
+  saveEl.classList.remove('hidden')
+  saveEl.textContent = '保存中...'
+  saveEl.style.color = '#888780'
+  try {
+    const res = await window.api.createNote({
+      vaultPath: currentVaultPath,
+      targetDir: currentInboxPath,
+      title: fileName + '_转录笔记',
+      template: 'blank',
+      body: audioNoteResultText
+    })
+    if (res.success) {
+      saveEl.textContent = '✅ 已保存到待处理文件库'
+      saveEl.style.color = '#3b6d11'
+    } else {
+      saveEl.textContent = '❌ 保存失败：' + (res.error || '')
+      saveEl.style.color = '#a32d2d'
+    }
+  } catch (e) {
+    saveEl.textContent = '❌ 错误：' + e.message
+    saveEl.style.color = '#a32d2d'
+  }
+}
+
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
 
 /* ── 设置页 ── */
@@ -1398,6 +1579,7 @@ async function loadAiSettings() {
   const s = await window.api.getAiSettings()
   document.getElementById('ai-api-key').value      = s.apiKey || ''
   document.getElementById('ai-model-id').value     = s.modelId || ''
+  document.getElementById('ai-audio-model-id').value = s.audioModelId || ''
   document.getElementById('ai-endpoint').value     = s.endpoint || 'https://ark.cn-beijing.volces.com/api/v3'
   document.getElementById('ai-classify-toggle').checked = s.aiClassifyEnabled || false
   document.getElementById('reminder-toggle').checked    = s.reminderEnabled || false
@@ -1411,6 +1593,7 @@ async function saveAiSettings() {
   const s = {
     apiKey:            document.getElementById('ai-api-key').value.trim(),
     modelId:           document.getElementById('ai-model-id').value.trim(),
+    audioModelId:      document.getElementById('ai-audio-model-id').value.trim(),
     endpoint:          document.getElementById('ai-endpoint').value.trim() || 'https://ark.cn-beijing.volces.com/api/v3',
     aiClassifyEnabled: document.getElementById('ai-classify-toggle').checked,
     reminderEnabled:   document.getElementById('reminder-toggle').checked,

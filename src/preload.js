@@ -53,5 +53,9 @@ contextBridge.exposeInMainWorld('api', {
   offAnalyzeProgress:()          => ipcRenderer.removeAllListeners('ai-analyze-progress'),
   getFolderTree:     (vaultPath) => ipcRenderer.invoke('get-folder-tree', vaultPath),
   getFolderMdFiles:  (folderPath)=> ipcRenderer.invoke('get-folder-md-files', folderPath),
+  selectAudioFile:   ()          => ipcRenderer.invoke('select-audio-file'),
+  aiAudioToNote:     (args)      => ipcRenderer.invoke('ai-audio-to-note', args),
+  onAudioNoteProgress:(cb)       => ipcRenderer.on('audio-note-progress', (_e, data) => cb(data)),
+  offAudioNoteProgress:()        => ipcRenderer.removeAllListeners('audio-note-progress'),
   onFilesDropped:    (cb)        => { window.__onFilesDropped = cb },
 })
