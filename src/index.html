@@ -519,21 +519,22 @@
       </div>
 
       <!-- 操作按钮 -->
-      <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+      <div style="display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid #f1efe8">
         <button class="btn-primary" onclick="doAudioToNote()" id="btn-audio-note" style="padding:8px 24px">开始转换</button>
         <div id="audio-note-progress" style="font-size:13px;color:#888780"></div>
       </div>
 
-      <!-- 结果区 -->
+      <!-- 结果区：全宽，紧接在上传区下方 -->
       <div id="audio-note-result" class="hidden" style="margin-top:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="font-size:14px;font-weight:500">✅ 转换完成</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:14px;font-weight:600;color:#2c2c2a">✅ 转换完成</div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn-sm" onclick="copyAudioNote()">📋 复制</button>
+            <button class="btn-sm" onclick="copyAudioNote()">📋 复制全文</button>
             <button class="btn-sm green" onclick="saveAudioNote()" id="btn-save-audio-note">💾 保存为笔记</button>
           </div>
         </div>
-        <div id="audio-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:520px;overflow-y:auto"></div>
+        <!-- 全宽输出框，不限制高度，内容多少就显示多少 -->
+        <div id="audio-note-content" style="width:100%;background:#f5f4f0;border-radius:8px;padding:20px 24px;font-size:13px;line-height:1.9;white-space:pre-wrap;box-sizing:border-box;border:1px solid #e0dfd8"></div>
         <div id="audio-note-save-result" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
       </div>
     </div>
