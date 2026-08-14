@@ -785,7 +785,7 @@ async function ffDeleteSelected() {
   })
   const confirmed = confirm(`确定要删除以下 ${checked.length} 个文件吗？\n（文件将移入系统回收站，可恢复）\n\n${names.slice(0,10).join('\n')}${names.length > 10 ? `\n…以及另外 ${names.length - 10} 个文件` : ''}`)
   if (!confirmed) return
-  const paths = [...checked].map(cb => cb.getAttribute('data-path'))
+  const paths = [...checked].map(cb => decodeURIComponent(cb.getAttribute('data-path')))
   let successCount = 0, failNames = []
   for (let i = 0; i < paths.length; i++) {
     const res = await window.api.deleteFile(paths[i])
@@ -817,8 +817,9 @@ async function loadFilesByType(type, label, cardEl) {
       const icon = fileIcon(f.name)
       const isMd = f.name.endsWith('.md')
       const ep = esc(f.path)
+      const dp = encodeURIComponent(f.path)
       return `<div class="folder-file-item" onclick="ffToggleItem(this)">
-        <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
+        <input type="checkbox" class="ff-checkbox" data-path="${dp}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
         <span class="ff-icon">${icon}</span>
         <span class="ff-name" title="${f.relativePath}">${f.name}</span>
         <span class="ff-meta">${f.mtime}</span>
@@ -841,8 +842,9 @@ function loadRecentFiles(recent) {
   el.innerHTML = _cachedRecent.map(f => {
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
     const ep = esc(f.path)
+    const dp = encodeURIComponent(f.path)
     return `<div class="folder-file-item" onclick="ffToggleItem(this)">
-      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
+      <input type="checkbox" class="ff-checkbox" data-path="${dp}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
@@ -866,8 +868,9 @@ async function loadFolderFiles(folderPath, folderName) {
     if (f.isDir) return `<div class="folder-file-item"><span class="ff-icon">📁</span><span class="ff-name">${f.name}</span></div>`
     const icon = fileIcon(f.name), isMd = f.name.endsWith('.md')
     const ep = esc(f.path)
+    const dp = encodeURIComponent(f.path)
     return `<div class="folder-file-item" onclick="ffToggleItem(this)">
-      <input type="checkbox" class="ff-checkbox" data-path="${ep}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
+      <input type="checkbox" class="ff-checkbox" data-path="${dp}" onclick="event.stopPropagation()" onchange="this.closest('.folder-file-item').classList.toggle('ff-selected',this.checked);ffUpdateCount()">
       <span class="ff-icon">${icon}</span>
       <span class="ff-name" title="${f.relativePath}">${f.name}</span>
       <span class="ff-meta">${f.mtime}</span>
