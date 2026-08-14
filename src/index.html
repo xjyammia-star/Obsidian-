@@ -477,38 +477,45 @@
       <p style="font-size:13px;color:#888780;line-height:1.8">输入 YouTube 链接，AI 提取字幕并生成结构化笔记，自动打标签存入知识库。</p>
       <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
     </div>
-    <div class="panel">
+    <div class="panel" style="grid-column:1/-1">
       <div class="section-title">🎙️ 本地视频/音频转笔记</div>
       <p style="font-size:13px;color:#888780;line-height:1.8">选择本地视频或音频文件，AI 自动识别语音并生成结构化笔记（需在设置中配置「音频模型 ID」）。</p>
 
-      <!-- 文件选择区 -->
-      <div id="audio-file-zone" style="margin-top:14px;border:2px dashed #d3d1c7;border-radius:10px;padding:18px;text-align:center;cursor:pointer;transition:border-color 0.12s" onclick="selectAudioFile()">
-        <div style="font-size:28px">🎬</div>
-        <div style="font-size:13px;color:#888780;margin-top:6px">点击选择文件</div>
-        <div style="font-size:11px;color:#b4b2a9;margin-top:3px">支持 MP3、MP4、M4A、WAV、OGG、MOV 等格式</div>
+      <!-- 大小限制提示 -->
+      <div style="margin-top:10px;padding:8px 12px;background:#fef9ee;border:1px solid #fac775;border-radius:8px;font-size:12px;color:#7a5c08;display:flex;gap:16px;flex-wrap:wrap">
+        <span>📏 <b>音频文件</b>：大小 ≤ 25 MB，时长 ≤ 120 分钟</span>
+        <span>🎬 <b>视频文件</b>：通过 Files API 上传，时长建议 ≤ 60 分钟</span>
+        <span>📄 支持格式：MP3、MP4、M4A、WAV、OGG、MOV、AAC、FLAC、WMA、WebM</span>
       </div>
-      <div id="audio-file-info" style="display:none;margin-top:10px;padding:10px 14px;background:#f5f4f0;border-radius:8px;display:flex;align-items:center;gap:10px">
-        <span style="font-size:20px">🎵</span>
-        <div style="flex:1">
-          <div id="audio-file-name" style="font-size:13px;font-weight:500"></div>
-          <div id="audio-file-size" style="font-size:11px;color:#888780;margin-top:2px"></div>
+
+      <!-- 文件选择区 + 提示词：左右布局 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+        <div>
+          <div id="audio-file-zone" style="border:2px dashed #d3d1c7;border-radius:10px;padding:24px 18px;text-align:center;cursor:pointer;transition:border-color 0.12s;background:#fafaf8" onclick="selectAudioFile()">
+            <div style="font-size:32px">🎬</div>
+            <div style="font-size:13px;color:#5f5e5a;margin-top:8px;font-weight:500">点击选择文件</div>
+            <div style="font-size:11px;color:#b4b2a9;margin-top:4px">MP3 / MP4 / M4A / WAV / MOV 等</div>
+          </div>
+          <div id="audio-file-info" style="display:none;padding:10px 14px;background:#f5f4f0;border-radius:8px;align-items:center;gap:10px">
+            <span style="font-size:20px">🎵</span>
+            <div style="flex:1;min-width:0">
+              <div id="audio-file-name" style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+              <div id="audio-file-size" style="font-size:11px;color:#888780;margin-top:2px"></div>
+            </div>
+            <button class="btn-sm" onclick="clearAudioFile()" style="color:#a32d2d;border-color:#f5b3b3;flex-shrink:0">✕ 移除</button>
+          </div>
         </div>
-        <button class="btn-sm" onclick="clearAudioFile()" style="color:#a32d2d;border-color:#f5b3b3">✕ 移除</button>
-      </div>
-
-      <!-- 自定义提示词 -->
-      <div style="margin-top:14px">
-        <div style="font-size:12px;color:#888780;margin-bottom:6px">自定义笔记要求（选填）</div>
-        <textarea id="audio-note-prompt" rows="2" placeholder="例如：这是一段英语课程录音，请用中文整理笔记；或：重点提取其中的行动建议..."
-          style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
-      </div>
-
-      <!-- 快捷示例 -->
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-        <span onclick="setAudioPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📝 提取核心观点</span>
-        <span onclick="setAudioPrompt('这是一段课程/讲座录音，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📚 课程笔记</span>
-        <span onclick="setAudioPrompt('这是一段会议录音，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📋 会议纪要</span>
-        <span onclick="setAudioPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">✏️ 仅整理格式</span>
+        <div>
+          <div style="font-size:12px;color:#888780;margin-bottom:6px">自定义笔记要求（选填）</div>
+          <textarea id="audio-note-prompt" rows="4" placeholder="例如：这是一段英语课程录音，请用中文整理笔记&#10;或：重点提取其中的行动建议..."
+            style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">
+            <span onclick="setAudioPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📝 核心观点</span>
+            <span onclick="setAudioPrompt('这是一段课程/讲座录音，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📚 课程笔记</span>
+            <span onclick="setAudioPrompt('这是一段会议录音，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">📋 会议纪要</span>
+            <span onclick="setAudioPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:3px 8px;cursor:pointer">✏️ 仅整理格式</span>
+          </div>
+        </div>
       </div>
 
       <!-- 操作按钮 -->
@@ -521,13 +528,13 @@
       <div id="audio-note-result" class="hidden" style="margin-top:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div style="font-size:14px;font-weight:500">✅ 转换完成</div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;align-items:center">
             <button class="btn-sm" onclick="copyAudioNote()">📋 复制</button>
-            <button class="btn-sm green" onclick="saveAudioNote()">💾 保存为笔记</button>
+            <button class="btn-sm green" onclick="saveAudioNote()" id="btn-save-audio-note">💾 保存为笔记</button>
           </div>
         </div>
         <div id="audio-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:520px;overflow-y:auto"></div>
-        <div id="audio-note-save-result" class="hidden import-result" style="margin-top:8px"></div>
+        <div id="audio-note-save-result" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
       </div>
     </div>
     <div class="panel" style="opacity:0.5;pointer-events:none">
@@ -1545,31 +1552,46 @@ function copyAudioNote() {
 }
 
 async function saveAudioNote() {
-  if (!audioNoteResultText || !currentInboxPath) return
-  const fileName = (currentAudioFilePath ? require('path').basename(currentAudioFilePath, require('path').extname(currentAudioFilePath)) : '音频笔记')
+  if (!audioNoteResultText) { alert('没有可保存的内容'); return }
+  if (!currentInboxPath) { alert('请先在系统设置中配置「待处理文件库」路径'); return }
+  // 从文件路径提取文件名（不依赖 require，用简单字符串处理）
+  let baseName = '音频笔记'
+  if (currentAudioFilePath) {
+    const parts = currentAudioFilePath.replace(/\\/g, '/').split('/')
+    const fullName = parts[parts.length - 1] || '音频笔记'
+    const dotIdx = fullName.lastIndexOf('.')
+    baseName = dotIdx > 0 ? fullName.slice(0, dotIdx) : fullName
+  }
   const saveEl = document.getElementById('audio-note-save-result')
-  saveEl.classList.remove('hidden')
+  const saveBtn = document.getElementById('btn-save-audio-note')
+  saveEl.style.display = 'block'
   saveEl.textContent = '保存中...'
+  saveEl.style.background = '#f5f4f0'
   saveEl.style.color = '#888780'
+  if (saveBtn) saveBtn.disabled = true
   try {
     const res = await window.api.createNote({
       vaultPath: currentVaultPath,
       targetDir: currentInboxPath,
-      title: fileName + '_转录笔记',
+      title: baseName + '_转录笔记',
       template: 'blank',
       body: audioNoteResultText
     })
     if (res.success) {
-      saveEl.textContent = '✅ 已保存到待处理文件库'
-      saveEl.style.color = '#3b6d11'
+      saveEl.textContent = '✅ 已保存到待处理文件库：' + currentInboxPath
+      saveEl.style.background = '#e8f5e9'
+      saveEl.style.color = '#2e6b3a'
     } else {
-      saveEl.textContent = '❌ 保存失败：' + (res.error || '')
+      saveEl.textContent = '❌ 保存失败：' + (res.error || '未知错误')
+      saveEl.style.background = '#fdecea'
       saveEl.style.color = '#a32d2d'
     }
   } catch (e) {
     saveEl.textContent = '❌ 错误：' + e.message
+    saveEl.style.background = '#fdecea'
     saveEl.style.color = '#a32d2d'
   }
+  if (saveBtn) saveBtn.disabled = false
 }
 
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
