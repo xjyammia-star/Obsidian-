@@ -635,8 +635,82 @@
     </div>
     <div class="panel" style="opacity:0.5;pointer-events:none">
       <div class="section-title">🌐 网页内容转笔记</div>
-      <p style="font-size:13px;color:#888780;line-height:1.8">输入网页链接，AI 提取主要内容并整理成笔记，自动分类存入知识库。</p>
-      <div style="margin-top:12px;padding:10px;background:#f5f4f0;border-radius:8px;font-size:12px;color:#b4b2a9;text-align:center">🚧 即将推出</div>
+      <p style="font-size:13px;color:#888780;line-height:1.6">粘贴网页链接，AI 自动提取正文并整理成笔记。</p>
+
+      <!-- 第一行：左=链接输入，右=说明 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;align-items:stretch">
+        <div style="border:2px dashed #d3d1c7;border-radius:10px;padding:22px 18px;background:#fafaf8;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+          <div style="font-size:30px">🌐</div>
+          <div style="font-size:13px;color:#5f5e5a;margin-top:8px;font-weight:500">粘贴网页链接</div>
+          <input id="web-url-input" type="text" placeholder="https://example.com/article"
+            style="width:100%;margin-top:12px;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:12px;outline:none;font-family:inherit;box-sizing:border-box;text-align:left"
+            oninput="webClearResult()" onkeydown="if(event.key==='Enter')doWebpageToNote()">
+          <div style="font-size:11px;color:#b4b2a9;margin-top:6px">支持大多数新闻、博客、文章类网页</div>
+        </div>
+        <div style="padding:14px 16px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:2">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 使用说明</div>
+          <div>✅ 支持新闻、博客、公众号等文章类网页</div>
+          <div>✅ 自动提取正文，过滤广告和导航内容</div>
+          <div>⚠️ 需要登录才能访问的页面无法抓取</div>
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid #fac775;color:#a07830">
+            ⚠️ 部分网站有反爬限制，可能无法获取内容
+          </div>
+        </div>
+      </div>
+
+      <!-- 第二行：笔记要求 -->
+      <div style="margin-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:12px;color:#888780">自定义笔记要求（选填）</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span onclick="setWebPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📝 核心观点</span>
+            <span onclick="setWebPrompt('这是一篇技术文章，请整理成学习笔记，包含重点概念、代码示例说明和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">💻 技术文章</span>
+            <span onclick="setWebPrompt('请整理成简洁的阅读摘要，包含：文章主旨、关键论点、结论')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📰 阅读摘要</span>
+            <span onclick="setWebPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">✏️ 仅整理格式</span>
+          </div>
+        </div>
+        <textarea id="web-prompt" rows="3" placeholder="例如：这是一篇英文文章，请用中文整理笔记；或：重点提取其中的数据和结论..."
+          style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+
+      <!-- 第三行：按钮 + 进度 -->
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <button class="btn-primary" onclick="doWebpageToNote()" id="btn-web-note" style="padding:8px 24px">开始转换</button>
+        <div id="web-progress" style="font-size:12px;color:#888780"></div>
+      </div>
+
+      <!-- 结果区 -->
+      <div id="web-result" class="hidden">
+        <!-- 网页信息卡 -->
+        <div style="padding:10px 14px;background:#f5f4f0;border-radius:8px;margin:12px 0 10px;font-size:13px;display:flex;gap:12px;align-items:center">
+          <span style="font-size:20px">🌐</span>
+          <div style="flex:1;min-width:0">
+            <div id="web-page-title" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+            <div id="web-page-url" style="font-size:11px;color:#888780;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          </div>
+        </div>
+        <!-- 保存提示 -->
+        <div id="web-save-msg" style="display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
+        <!-- 笔记操作 -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:13px;font-weight:600;color:#2c2c2a">✅ 笔记已生成</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn-sm" onclick="copyWebNote()">📋 复制</button>
+            <button class="btn-sm green" onclick="saveWebNote()">💾 保存为笔记</button>
+          </div>
+        </div>
+        <div id="web-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto"></div>
+        <!-- 原文折叠 -->
+        <div style="margin-top:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span onclick="toggleWebRaw()" style="font-size:12px;color:#888780;cursor:pointer;user-select:none" id="web-raw-toggle">▶ 查看提取的原文</span>
+            <div id="web-raw-actions" style="display:none;gap:6px;align-items:center">
+              <button class="btn-sm" onclick="copyWebRaw()">📋 复制原文</button>
+            </div>
+          </div>
+          <div id="web-raw-content" style="display:none;margin-top:8px;padding:12px;background:#fafaf8;border:1px solid #e0dfd8;border-radius:8px;font-size:12px;color:#888780;line-height:1.8;max-height:320px;overflow-y:auto;white-space:pre-wrap"></div>
+        </div>
+      </div>
     </div>
   </div>
   <p style="font-size:12px;color:#b4b2a9;margin-top:8px;text-align:center">以上功能需要在「系统设置」中配置 API Key 后使用</p>
@@ -1724,6 +1798,131 @@ async function saveYtCaption() {
     msgEl.style.background = '#fcebeb'
     msgEl.style.color = '#a32d2d'
     msgEl.textContent = '❌ 保存失败：' + res.error
+  }
+}
+
+/* ── 网页内容转笔记 ── */
+let _webNoteResult = null
+
+function webClearResult() {
+  document.getElementById('web-result').classList.add('hidden')
+  document.getElementById('web-progress').textContent = ''
+  _webNoteResult = null
+}
+
+function setWebPrompt(text) {
+  document.getElementById('web-prompt').value = text
+}
+
+function toggleWebRaw() {
+  const box = document.getElementById('web-raw-content')
+  const btn = document.getElementById('web-raw-toggle')
+  const actions = document.getElementById('web-raw-actions')
+  const isHidden = box.style.display === 'none'
+  box.style.display = isHidden ? 'block' : 'none'
+  actions.style.display = isHidden ? 'flex' : 'none'
+  btn.textContent = (isHidden ? '▼ ' : '▶ ') + '查看提取的原文'
+}
+
+function copyWebRaw() {
+  if (!_webNoteResult) return
+  navigator.clipboard.writeText(_webNoteResult.rawText).then(() => {
+    const btn = event.target
+    btn.textContent = '✅ 已复制'
+    setTimeout(() => { btn.textContent = '📋 复制原文' }, 2000)
+  })
+}
+
+function copyWebNote() {
+  if (!_webNoteResult) return
+  navigator.clipboard.writeText(_webNoteResult.note).then(() => {
+    const btn = event.target
+    btn.textContent = '✅ 已复制'
+    setTimeout(() => { btn.textContent = '📋 复制' }, 2000)
+  })
+}
+
+async function saveWebNote() {
+  if (!_webNoteResult) return
+  const settings = await window.api.getAiSettings()
+  const inboxPath = settings.inboxFolder || currentInboxPath || null
+  if (!inboxPath) { alert('请先在设置中配置「待处理文件库路径」'); return }
+
+  const safeTitle = (_webNoteResult.title || '网页笔记').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
+  const now = new Date()
+  const dateStr = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+
+  const body = `---\ntitle: "${_webNoteResult.title}"\nsource: "${_webNoteResult.url}"\ndate: "${dateStr}"\ntags: []\n---\n\n${_webNoteResult.note}`
+
+  const res = await window.api.createNote({
+    vaultPath: currentVaultPath,
+    targetDir: inboxPath,
+    title: 'Web_' + safeTitle + '_' + dateStr,
+    template: 'blank',
+    body
+  })
+  const msgEl = document.getElementById('web-save-msg')
+  msgEl.style.display = 'block'
+  if (res.success) {
+    msgEl.style.background = '#eaf3de'
+    msgEl.style.color = '#3b6d11'
+    msgEl.textContent = '✅ 已保存到：' + res.path
+  } else {
+    msgEl.style.background = '#fcebeb'
+    msgEl.style.color = '#a32d2d'
+    msgEl.textContent = '❌ 保存失败：' + res.error
+  }
+}
+
+async function doWebpageToNote() {
+  const url = document.getElementById('web-url-input').value.trim()
+  if (!url) { alert('请先粘贴网页链接'); return }
+
+  const btn = document.getElementById('btn-web-note')
+  const progressEl = document.getElementById('web-progress')
+  const resultEl = document.getElementById('web-result')
+
+  btn.disabled = true
+  btn.textContent = '处理中...'
+  resultEl.classList.add('hidden')
+  _webNoteResult = null
+
+  window.api.offWebpageProgress && window.api.offWebpageProgress()
+  window.api.onWebpageProgress && window.api.onWebpageProgress(msg => {
+    progressEl.textContent = '⏳ ' + msg
+  })
+
+  try {
+    const userPrompt = document.getElementById('web-prompt').value.trim()
+    const res = await window.api.webpageToNote({ pageUrl: url, userPrompt })
+
+    if (!res.success) {
+      progressEl.textContent = ''
+      alert('转换失败：\n' + res.error)
+      return
+    }
+
+    _webNoteResult = res
+    progressEl.textContent = ''
+
+    document.getElementById('web-page-title').textContent = res.title || res.url
+    document.getElementById('web-page-url').textContent = res.url
+    document.getElementById('web-note-content').textContent = res.note
+    document.getElementById('web-raw-content').textContent = res.rawText || ''
+    document.getElementById('web-raw-content').style.display = 'none'
+    document.getElementById('web-raw-actions').style.display = 'none'
+    document.getElementById('web-raw-toggle').textContent = '▶ 查看提取的原文'
+    document.getElementById('web-save-msg').style.display = 'none'
+    resultEl.classList.remove('hidden')
+
+  } catch (err) {
+    progressEl.textContent = ''
+    alert('发生错误：' + err.message)
+  } finally {
+    btn.disabled = false
+    btn.textContent = '开始转换'
+    window.api.offWebpageProgress && window.api.offWebpageProgress()
   }
 }
 
