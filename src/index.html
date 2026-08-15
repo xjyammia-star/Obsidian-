@@ -2356,6 +2356,7 @@ async function renderFeedList() {
         </div>
         <span style="font-size:11px;color:#b4b2a9;white-space:nowrap">上次检查：${lastCheck}</span>
         <button class="btn-sm" onclick="checkOneFeed(${f._index})" style="white-space:nowrap">🔄 检查</button>
+        <button class="btn-sm" onclick="resetOneFeed(${f._index})" style="white-space:nowrap;color:#888780" title="清空检查记录，下次重新从今日开始">↺ 重置</button>
         <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0;white-space:nowrap" onclick="deleteFeed(${f._index})">删除</button>
       </div>`
     }).join('')
@@ -2425,6 +2426,11 @@ async function deleteFeed(index) {
   await window.api.feedDelete(index)
   renderFeedList()
   document.getElementById('feed-updates-section').style.display = 'none'
+}
+
+async function resetOneFeed(index) {
+  await window.api.feedResetOne(index)
+  renderFeedList()
 }
 
 async function feedLoginPlatform(platform) {

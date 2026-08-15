@@ -1910,6 +1910,16 @@ async function doCheckFeed(feed) {
   }
 }
 
+ipcMain.handle('feed-reset-one', (event, index) => {
+  const feeds = getFeedStore()
+  if (feeds[index]) {
+    feeds[index].lastCheck = null
+    feeds[index].seenIds = []
+    saveFeedStore(feeds)
+  }
+  return { success: true }
+})
+
 ipcMain.handle('feed-check-one', async (event, index) => {
   const feeds = getFeedStore()
   const feed = feeds[index]
@@ -1919,10 +1929,10 @@ ipcMain.handle('feed-check-one', async (event, index) => {
     const isFirstCheck = !feed.lastCheck
 
     if (isFirstCheck) {
-      // 第一次检查：只保留今日发布的内容
+      // 第一次检查：保留今日内容，无时间戳的也列出（部分平台无法获取时间）
       const todayStart = new Date(); todayStart.setHours(0,0,0,0)
       const todayItems = allItems.filter(it => {
-        if (!it.publishedAt) return false
+        if (!it.publishedAt) return true  // 无时间戳也列出
         return new Date(it.publishedAt) >= todayStart
       })
       // 记录所有内容为已读（包括今日之前的）
@@ -1963,7 +1973,7 @@ ipcMain.handle('feed-check-all', async (event) => {
 
       if (isFirstCheck) {
         const todayStart = new Date(); todayStart.setHours(0,0,0,0)
-        const todayItems = items.filter(it => it.publishedAt && new Date(it.publishedAt) >= todayStart)
+        const todayItems = items.filter(it => !it.publishedAt || new Date(it.publishedAt) >= todayStart)
         feeds[i].seenIds = items.map(it => it.id).slice(-200)
         feeds[i].lastCheck = new Date().toISOString()
         const mapped = todayItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
