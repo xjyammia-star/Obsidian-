@@ -477,6 +477,23 @@ ipcMain.handle('delete-file', async (event, filePath) => {
   } catch (err) { return { success: false, error: err.message } }
 })
 
+// ── 移动文件到指定文件夹 ──
+ipcMain.handle('move-file', async (event, { srcPath, destDir }) => {
+  try {
+    const fileName = path.basename(srcPath)
+    let destPath = path.join(destDir, fileName)
+    // 目标已存在时加时间戳后缀避免覆盖
+    if (fs.existsSync(destPath)) {
+      const ext = path.extname(fileName)
+      const base = path.basename(fileName, ext)
+      const ts = Date.now()
+      destPath = path.join(destDir, `${base}_${ts}${ext}`)
+    }
+    fs.renameSync(srcPath, destPath)
+    return { success: true, destPath }
+  } catch (err) { return { success: false, error: err.message } }
+})
+
 // ── 标签统计（只读 frontmatter，不扫正文）──
 ipcMain.handle('get-tag-stats', async (event, vaultPath) => {
   try {

@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   checkDuplicates:   (vaultPath) => ipcRenderer.invoke('check-duplicate-files', vaultPath),
   checkEmptyFiles:   (vaultPath) => ipcRenderer.invoke('check-empty-files', vaultPath),
   deleteFile:        (filePath)  => ipcRenderer.invoke('delete-file', filePath),
+  moveFile:          (args)      => ipcRenderer.invoke('move-file', args),
   getTagStats:       (vaultPath) => ipcRenderer.invoke('get-tag-stats', vaultPath),
   searchByTag:       (args)      => ipcRenderer.invoke('search-by-tag', args),
   createNote:        (args)      => ipcRenderer.invoke('create-note', args),

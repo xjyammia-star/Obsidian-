@@ -254,10 +254,25 @@
           <span id="ff-select-count" style="font-size:12px;color:#888780"></span>
           <button class="btn-sm" onclick="ffSelectAll(true)">全选</button>
           <button class="btn-sm" onclick="ffSelectAll(false)">取消</button>
+          <button class="btn-sm" style="color:#2e6b3a;border-color:#b8dfc4" onclick="ffMoveSelected()">🗂 移动选中</button>
           <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0" onclick="ffDeleteSelected()">🗑 删除选中</button>
         </div>
       </div>
       <div class="panel scrollable" id="folder-files"><div class="loading">加载中...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 移动文件浮层（全局，挂在 body 级别） -->
+<div id="ff-move-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:24px;width:440px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:600;color:#2c2c2a;margin-bottom:6px">🗂 移动到文件夹</div>
+    <div id="ff-move-file-count" style="font-size:12px;color:#888780;margin-bottom:14px"></div>
+    <div style="font-size:12px;color:#888780;margin-bottom:6px">选择目标文件夹：</div>
+    <div id="ff-move-folder-list" style="overflow-y:auto;border:1px solid #e0dfd8;border-radius:8px;max-height:340px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn-sm" onclick="ffCloseMoveOverlay()">取消</button>
+      <button class="btn-sm green" id="ff-move-confirm-btn" onclick="ffConfirmMove()">确认移动</button>
     </div>
   </div>
 </div>
@@ -954,6 +969,88 @@ async function ffDeleteSelected() {
   }
   if (failNames.length) {
     alert(`${successCount} 个文件已移入回收站。\n以下文件删除失败：\n${failNames.join('\n')}`)
+  }
+  refreshAll()
+}
+
+/* ── 移动文件 ── */
+let _ffMoveTargetPath = null
+
+async function ffMoveSelected() {
+  const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
+  if (!checked.length) { alert('请先勾选要移动的文件'); return }
+
+  // 打开浮层
+  const overlay = document.getElementById('ff-move-overlay')
+  const countEl = document.getElementById('ff-move-file-count')
+  const listEl = document.getElementById('ff-move-folder-list')
+  const confirmBtn = document.getElementById('ff-move-confirm-btn')
+
+  countEl.textContent = `已选 ${checked.length} 个文件`
+  _ffMoveTargetPath = null
+  confirmBtn.disabled = true
+  confirmBtn.style.opacity = '0.5'
+  listEl.innerHTML = '<div style="padding:12px;color:#888780;font-size:12px">加载文件夹列表...</div>'
+  overlay.style.display = 'flex'
+
+  // 获取知识库所有文件夹
+  const res = await window.api.getVaultFolders(currentVaultPath)
+  if (!res || !res.folders || !res.folders.length) {
+    listEl.innerHTML = '<div style="padding:12px;color:#888780;font-size:12px">没有找到文件夹</div>'
+    return
+  }
+
+  listEl.innerHTML = res.folders.map(f => {
+    const rel = f.relativePath || f.path.replace(currentVaultPath, '').replace(/^[\\/]/, '') || '根目录'
+    const ep = encodeURIComponent(f.path)
+    return `<div class="ff-folder-item" data-path="${ep}"
+      onclick="ffSelectMoveTarget(this,'${ep}')"
+      style="padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:8px">
+      <span>📁</span><span>${rel}</span>
+    </div>`
+  }).join('')
+}
+
+function ffSelectMoveTarget(el, encodedPath) {
+  document.querySelectorAll('.ff-folder-item').forEach(i => {
+    i.style.background = ''
+    i.style.color = ''
+  })
+  el.style.background = '#eeedfe'
+  el.style.color = '#534ab7'
+  _ffMoveTargetPath = decodeURIComponent(encodedPath)
+  const confirmBtn = document.getElementById('ff-move-confirm-btn')
+  confirmBtn.disabled = false
+  confirmBtn.style.opacity = '1'
+}
+
+function ffCloseMoveOverlay() {
+  document.getElementById('ff-move-overlay').style.display = 'none'
+  _ffMoveTargetPath = null
+}
+
+async function ffConfirmMove() {
+  if (!_ffMoveTargetPath) return
+  const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
+  if (!checked.length) return
+
+  const paths = [...checked].map(cb => decodeURIComponent(cb.getAttribute('data-path')))
+  const names = [...checked].map(cb => {
+    const row = cb.closest('.folder-file-item')
+    return row ? row.querySelector('.ff-name').textContent : '未知文件'
+  })
+
+  ffCloseMoveOverlay()
+
+  let successCount = 0, failNames = []
+  for (let i = 0; i < paths.length; i++) {
+    const res = await window.api.moveFile({ srcPath: paths[i], destDir: _ffMoveTargetPath })
+    if (res && res.success) { successCount++ }
+    else { failNames.push(names[i] + (res ? '：' + res.error : '')) }
+  }
+
+  if (failNames.length) {
+    alert(`${successCount} 个文件移动成功。\n以下文件移动失败：\n${failNames.join('\n')}`)
   }
   refreshAll()
 }
