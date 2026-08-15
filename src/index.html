@@ -633,13 +633,28 @@
         <div id="audio-note-content" style="width:100%;background:#f5f4f0;border:1px solid #e0dfd8;border-radius:8px;padding:16px 20px;font-size:13px;line-height:1.9;white-space:pre-wrap;box-sizing:border-box"></div>
       </div>
     </div>
-    <div class="panel" style="opacity:0.5;pointer-events:none">
+    <div class="panel">
       <div class="section-title">🌐 网页内容转笔记</div>
-      <p style="font-size:13px;color:#888780;line-height:1.6">粘贴网页链接，AI 自动提取正文并整理成笔记。</p>
+      <p style="font-size:13px;color:#888780;line-height:1.6">粘贴网页链接，或直接粘贴网页正文，AI 自动整理成笔记。</p>
 
-      <!-- 第一行：左=链接输入，右=说明 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;align-items:stretch">
-        <div style="border:2px dashed #d3d1c7;border-radius:10px;padding:22px 18px;background:#fafaf8;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+      <!-- 模式切换 -->
+      <div style="display:flex;gap:6px;margin-top:10px;margin-bottom:14px">
+        <button id="web-mode-url" onclick="switchWebMode('url')"
+          style="padding:5px 14px;border-radius:6px;border:1px solid #534ab7;background:#534ab7;color:#fff;font-size:12px;cursor:pointer;font-family:inherit">
+          🔗 链接模式
+        </button>
+        <button id="web-mode-paste" onclick="switchWebMode('paste')"
+          style="padding:5px 14px;border-radius:6px;border:1px solid #d3d1c7;background:#fff;color:#5f5e5a;font-size:12px;cursor:pointer;font-family:inherit">
+          📋 粘贴模式
+        </button>
+        <span style="font-size:11px;color:#b4b2a9;align-self:center;margin-left:4px">粘贴模式支持需要登录的网页（公众号、知乎、付费内容等）</span>
+      </div>
+
+      <!-- 第一行：左=输入区，右=说明 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch">
+
+        <!-- 链接模式输入 -->
+        <div id="web-input-url" style="border:2px dashed #d3d1c7;border-radius:10px;padding:22px 18px;background:#fafaf8;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
           <div style="font-size:30px">🌐</div>
           <div style="font-size:13px;color:#5f5e5a;margin-top:8px;font-weight:500">粘贴网页链接</div>
           <input id="web-url-input" type="text" placeholder="https://example.com/article"
@@ -647,14 +662,36 @@
             oninput="webClearResult()" onkeydown="if(event.key==='Enter')doWebpageToNote()">
           <div style="font-size:11px;color:#b4b2a9;margin-top:6px">支持大多数新闻、博客、文章类网页</div>
         </div>
-        <div style="padding:14px 16px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:2">
-          <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 使用说明</div>
-          <div>✅ 支持新闻、博客、公众号等文章类网页</div>
+
+        <!-- 粘贴模式输入（默认隐藏） -->
+        <div id="web-input-paste" style="display:none;border:2px dashed #d3d1c7;border-radius:10px;padding:14px 18px;background:#fafaf8;flex-direction:column">
+          <div style="font-size:12px;color:#888780;margin-bottom:6px">可选：填写文章标题和来源链接</div>
+          <input id="web-paste-title" type="text" placeholder="文章标题（选填）"
+            style="width:100%;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:12px;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:6px">
+          <input id="web-paste-url" type="text" placeholder="来源链接（选填）"
+            style="width:100%;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:12px;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:8px">
+          <textarea id="web-paste-content" rows="5" placeholder="在浏览器中打开网页，全选正文（Ctrl+A 或 Cmd+A），复制后粘贴到这里..."
+            style="width:100%;padding:8px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:12px;outline:none;font-family:inherit;resize:vertical;line-height:1.6;box-sizing:border-box"
+            oninput="webClearResult()"></textarea>
+        </div>
+
+        <!-- 右侧说明（随模式切换） -->
+        <div id="web-tip-url" style="padding:14px 16px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:2">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 链接模式说明</div>
+          <div>✅ 支持新闻、博客、公众号等公开网页</div>
           <div>✅ 自动提取正文，过滤广告和导航内容</div>
-          <div>⚠️ 需要登录才能访问的页面无法抓取</div>
+          <div>❌ 需要登录才能访问的页面无法抓取</div>
           <div style="margin-top:6px;padding-top:6px;border-top:1px solid #fac775;color:#a07830">
-            ⚠️ 部分网站有反爬限制，可能无法获取内容
+            遇到无法抓取的网页，改用「粘贴模式」
           </div>
+        </div>
+        <div id="web-tip-paste" style="display:none;padding:14px 16px;background:#eeedfe;border:1px solid #c5c2f5;border-radius:10px;font-size:12px;color:#3d3580;line-height:2">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 粘贴模式说明</div>
+          <div>✅ 支持任何需要登录的网站</div>
+          <div>✅ 公众号、知乎、付费内容均可</div>
+          <div>① 在浏览器中打开目标网页</div>
+          <div>② 全选正文内容并复制</div>
+          <div>③ 粘贴到左侧文本框，点击开始转换</div>
         </div>
       </div>
 
@@ -1803,6 +1840,26 @@ async function saveYtCaption() {
 
 /* ── 网页内容转笔记 ── */
 let _webNoteResult = null
+let _webMode = 'url'
+
+function switchWebMode(mode) {
+  _webMode = mode
+  const isUrl = mode === 'url'
+  document.getElementById('web-input-url').style.display = isUrl ? 'flex' : 'none'
+  document.getElementById('web-input-paste').style.display = isUrl ? 'none' : 'flex'
+  document.getElementById('web-tip-url').style.display = isUrl ? 'block' : 'none'
+  document.getElementById('web-tip-paste').style.display = isUrl ? 'none' : 'block'
+  const btnUrl = document.getElementById('web-mode-url')
+  const btnPaste = document.getElementById('web-mode-paste')
+  if (isUrl) {
+    btnUrl.style.background = '#534ab7'; btnUrl.style.color = '#fff'; btnUrl.style.borderColor = '#534ab7'
+    btnPaste.style.background = '#fff'; btnPaste.style.color = '#5f5e5a'; btnPaste.style.borderColor = '#d3d1c7'
+  } else {
+    btnPaste.style.background = '#534ab7'; btnPaste.style.color = '#fff'; btnPaste.style.borderColor = '#534ab7'
+    btnUrl.style.background = '#fff'; btnUrl.style.color = '#5f5e5a'; btnUrl.style.borderColor = '#d3d1c7'
+  }
+  webClearResult()
+}
 
 function webClearResult() {
   document.getElementById('web-result').classList.add('hidden')
@@ -1876,8 +1933,17 @@ async function saveWebNote() {
 }
 
 async function doWebpageToNote() {
-  const url = document.getElementById('web-url-input').value.trim()
-  if (!url) { alert('请先粘贴网页链接'); return }
+  let pageUrl = '', pasteContent = '', pasteTitle = ''
+
+  if (_webMode === 'url') {
+    pageUrl = document.getElementById('web-url-input').value.trim()
+    if (!pageUrl) { alert('请先粘贴网页链接'); return }
+  } else {
+    pasteContent = document.getElementById('web-paste-content').value.trim()
+    pasteTitle = document.getElementById('web-paste-title').value.trim()
+    pageUrl = document.getElementById('web-paste-url').value.trim()
+    if (!pasteContent) { alert('请先粘贴网页正文内容'); return }
+  }
 
   const btn = document.getElementById('btn-web-note')
   const progressEl = document.getElementById('web-progress')
@@ -1895,7 +1961,7 @@ async function doWebpageToNote() {
 
   try {
     const userPrompt = document.getElementById('web-prompt').value.trim()
-    const res = await window.api.webpageToNote({ pageUrl: url, userPrompt })
+    const res = await window.api.webpageToNote({ pageUrl, userPrompt, pasteContent, pasteTitle })
 
     if (!res.success) {
       progressEl.textContent = ''

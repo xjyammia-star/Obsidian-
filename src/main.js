@@ -1431,3 +1431,134 @@ function parseVttCaption(vtt) {
   }
   return textLines.join(' ')
 }
+
+
+// ── 网页内容转笔记 ──
+function fetchWebPage(pageUrl) {
+  return new Promise((resolve, reject) => {
+    const https = require('https')
+    const http = require('http')
+    const url = new URL(pageUrl)
+    const lib = url.protocol === 'https:' ? https : http
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'identity'
+      }
+    }
+    const req = lib.request(options, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : url.origin + res.headers.location
+        fetchWebPage(redirectUrl).then(resolve).catch(reject)
+        return
+      }
+      if (res.statusCode !== 200) {
+        reject(new Error('HTTP ' + res.statusCode))
+        return
+      }
+      const chunks = []
+      res.on('data', chunk => chunks.push(chunk))
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('请求超时')) })
+    req.end()
+  })
+}
+
+ipcMain.handle('webpage-to-note', async (event, { pageUrl, userPrompt, pasteContent, pasteTitle }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+  const sendProgress = (msg) => {
+    try { event.sender.send('webpage-note-progress', msg) } catch (_) {}
+  }
+  try {
+    let title = '', rawText = '', cleanUrl = pageUrl ? pageUrl.trim() : ''
+
+    if (pasteContent && pasteContent.trim()) {
+      // ── 粘贴模式：直接用用户粘贴的内容 ──
+      sendProgress('正在整理粘贴的内容...')
+      rawText = pasteContent.trim()
+      title = pasteTitle || '粘贴内容'
+      if (!cleanUrl) cleanUrl = ''
+
+    } else {
+      // ── 链接模式：抓取网页 ──
+      if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl
+      sendProgress('正在获取网页内容...')
+      const html = await fetchWebPage(cleanUrl)
+      if (!html || html.length < 100) {
+        return { success: false, error: '无法获取网页内容，请检查链接是否正确或改用「粘贴模式」' }
+      }
+
+      sendProgress('正在提取正文...')
+      const { JSDOM } = require('jsdom')
+      const { Readability } = require('@mozilla/readability')
+      const dom = new JSDOM(html, { url: cleanUrl })
+      const reader = new Readability(dom.window.document)
+      const article = reader.parse()
+
+      if (article && article.textContent && article.textContent.trim().length > 100) {
+        title = article.title || ''
+        rawText = article.textContent.trim()
+      } else {
+        title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || ''
+        title = title.replace(/<[^>]+>/g, '').trim()
+        rawText = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s{2,}/g, '\n')
+          .trim()
+          .slice(0, 15000)
+      }
+
+      if (!rawText || rawText.length < 50) {
+        return { success: false, error: '网页内容为空或无法解析，请改用「粘贴模式」手动粘贴正文' }
+      }
+    }
+
+    // 3. 调 DeepSeek 整理笔记
+    sendProgress('AI 正在整理笔记...')
+    const notePrompt = (userPrompt && userPrompt.trim())
+      ? userPrompt.trim()
+      : '请整理成结构清晰的笔记，包含：文章主题、核心观点、重要细节、总结'
+
+    const userMsg = `以下是网页「${title}」的正文内容，请帮我整理成笔记。
+
+网页链接：${cleanUrl}
+笔记要求：${notePrompt}
+
+正文内容（前10000字）：
+${rawText.slice(0, 10000)}`
+
+    const reply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [
+        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从网页文章中提炼有价值的内容，输出结构清晰的 Markdown 笔记。' },
+        { role: 'user', content: userMsg }
+      ],
+      4000
+    )
+
+    sendProgress('完成！')
+    return {
+      success: true,
+      note: reply,
+      title: title || cleanUrl,
+      rawText: rawText,
+      url: cleanUrl
+    }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
