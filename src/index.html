@@ -727,7 +727,7 @@ function showPage(name) {
   })
   const current = document.getElementById('page-'+name)
   if (current) { current.style.display = ''; current.classList.remove('hidden') }
-  const pages = ['overview','import','search','new-note','tools','ai','settings']
+  const pages = ['overview','new-note','import','search','ai','tools','settings']
   document.querySelectorAll('.nav-btn').forEach((btn,i) => btn.classList.toggle('active', pages[i] === name))
   if (name === 'import') {
     loadFolders()
