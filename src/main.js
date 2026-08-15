@@ -1952,6 +1952,15 @@ ipcMain.handle('feed-reset-one', (event, index) => {
   return { success: true }
 })
 
+ipcMain.handle('feed-rename', (event, { index, name }) => {
+  const feeds = getFeedStore()
+  if (feeds[index]) {
+    feeds[index].name = name
+    saveFeedStore(feeds)
+  }
+  return { success: true }
+})
+
 ipcMain.handle('feed-check-one', async (event, index) => {
   const feeds = getFeedStore()
   const feed = feeds[index]

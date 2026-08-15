@@ -2355,11 +2355,46 @@ async function renderFeedList() {
           <span style="font-size:11px;color:#b4b2a9;margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.url}</span>
         </div>
         <span style="font-size:11px;color:#b4b2a9;white-space:nowrap">上次检查：${lastCheck}</span>
+        <button class="btn-sm" onclick="editFeedName(${f._index},this)" data-name="${f.name.replace(/"/g,'&quot;')}" style="white-space:nowrap">✏️ 改名</button>
         <button class="btn-sm" onclick="checkOneFeed(${f._index})" style="white-space:nowrap">🔄 检查</button>
-        <button class="btn-sm" onclick="resetOneFeed(${f._index})" style="white-space:nowrap;color:#888780" title="清空检查记录，下次重新从今日开始">↺ 重置</button>
+        <button class="btn-sm" onclick="resetOneFeed(${f._index})" style="white-space:nowrap;color:#888780" title="清空检查记录">↺ 重置</button>
         <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0;white-space:nowrap" onclick="deleteFeed(${f._index})">删除</button>
       </div>`
     }).join('')
+
+    // 该平台已有的检查结果（从全局 _feedItems 里筛出来）
+    const platformItems = _feedItems.filter(it => it.platform === platform)
+    const resultSection = platformItems.length > 0 ? `
+      <div id="feed-result-${platform}" style="border-top:1px solid #e8e6de">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#f5f4f0;cursor:pointer"
+          onclick="togglePlatformResults('${platform}')">
+          <span style="font-size:12px;font-weight:500;color:#534ab7">📋 最新内容（${platformItems.length} 条）</span>
+          <span id="feed-result-toggle-${platform}" style="font-size:11px;color:#888780">▼ 收起</span>
+        </div>
+        <div id="feed-result-body-${platform}">
+          ${platformItems.map((item, gi) => {
+            const globalIdx = _feedItems.indexOf(item)
+            const typeInfo = { video:{label:'视频',color:'#534ab7',canProcess:true,action:'转笔记'}, article:{label:'图文',color:'#0f6e56',canProcess:true,action:'AI整理'}, tweet:{label:'推文',color:'#0f6e56',canProcess:true,action:'AI整理'}, image:{label:'图片',color:'#888780',canProcess:false,action:'不支持'}, unknown:{label:'未知',color:'#888780',canProcess:false,action:'保存链接'} }
+            const t = typeInfo[item.type] || typeInfo.unknown
+            const date = item.publishedAt ? new Date(item.publishedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
+            return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-top:1px solid #f1efe8;background:#fff">
+              <input type="checkbox" class="feed-item-cb" data-index="${globalIdx}" style="margin-top:3px;width:15px;height:15px;accent-color:#534ab7;flex-shrink:0">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;flex-wrap:wrap">
+                  <span style="font-size:11px;padding:1px 7px;border-radius:4px;background:${t.color}18;color:${t.color}">${t.label}</span>
+                  <span style="font-size:11px;color:#b4b2a9">${date || '日期未知'}</span>
+                </div>
+                <div style="font-size:13px;font-weight:500;color:#2c2c2a;line-height:1.5">${item.title || '（无标题）'}</div>
+                ${item.summary ? `<div style="font-size:12px;color:#888780;margin-top:3px;line-height:1.5">${item.summary}</div>` : ''}
+              </div>
+              <div style="flex-shrink:0;display:flex;flex-direction:column;gap:4px">
+                ${t.canProcess ? `<button class="btn-sm green" onclick="processFeedItem(${globalIdx})" style="white-space:nowrap">${t.action}</button>` : `<span style="font-size:11px;color:#b4b2a9">${t.action}</span>`}
+                <button class="btn-sm" onclick="openFeedItemLink(${globalIdx})" style="white-space:nowrap">打开链接</button>
+              </div>
+            </div>`
+          }).join('')}
+        </div>
+      </div>` : ''
 
     return `<div style="border:1px solid #e8e6de;border-radius:10px;margin-bottom:10px;overflow:hidden;background:#fafaf8">
       <!-- 平台标题行 -->
@@ -2376,6 +2411,8 @@ async function renderFeedList() {
       </div>
       <!-- 账号列表 -->
       ${accountRows}
+      <!-- 该平台的检查结果 -->
+      ${resultSection}
     </div>`
   }).join('')
 }
@@ -2430,6 +2467,23 @@ async function deleteFeed(index) {
 
 async function resetOneFeed(index) {
   await window.api.feedResetOne(index)
+  renderFeedList()
+}
+
+function togglePlatformResults(platform) {
+  const body = document.getElementById('feed-result-body-' + platform)
+  const toggle = document.getElementById('feed-result-toggle-' + platform)
+  if (!body) return
+  const isHidden = body.style.display === 'none'
+  body.style.display = isHidden ? '' : 'none'
+  toggle.textContent = isHidden ? '▼ 收起' : '▶ 展开'
+}
+
+async function editFeedName(index, btn) {
+  const currentName = btn.dataset.name || ''
+  const newName = prompt('修改备注名称：', currentName)
+  if (!newName || newName.trim() === currentName) return
+  await window.api.feedRename({ index, name: newName.trim() })
   renderFeedList()
 }
 
@@ -2515,8 +2569,7 @@ async function checkAllFeeds() {
   }
 
   if (res && res.items && res.items.length) {
-    _feedItems = res.items
-    renderFeedUpdates()
+    res.items.forEach(it => { if (!_feedItems.find(x => x.id === it.id)) _feedItems.push(it) })
     renderFeedList()
   } else {
     renderFeedList()
@@ -2530,25 +2583,22 @@ async function checkOneFeed(index) {
   const progressEl = document.getElementById('feed-progress')
   progressEl.style.display = 'block'
   progressEl.textContent = '⏳ 检查中...'
-  _feedItems = []
 
   const res = await window.api.feedCheckOne(index)
   progressEl.style.display = 'none'
 
   if (res && res.isFirstCheck) {
-    renderFeedList()
     if (res.hasToday && res.items.length > 0) {
-      // 今天有新内容，显示出来
-      _feedItems = res.items
-      renderFeedUpdates()
-      alert(`「${res.sourceName}」初始化完成 ✅\n今日有 ${res.items.length} 条新发布内容，已列出供你处理。\n之后检查将只显示此时间之后发布的内容。`)
+      // 今日有内容，合并进全局列表后重新渲染
+      res.items.forEach(it => { if (!_feedItems.find(x => x.id === it.id)) _feedItems.push(it) })
+      renderFeedList()
+      alert(`「${res.sourceName}」初始化完成 ✅\n今日有 ${res.items.length} 条新发布内容，已在下方列出。`)
     } else {
-      // 今天没有新内容
+      renderFeedList()
       alert(`「${res.sourceName}」初始化完成 ✅\n今日暂无新发布内容。\n之后检查将显示 ${new Date().toLocaleDateString('zh-CN')} 之后发布的所有新内容。`)
     }
   } else if (res && res.items && res.items.length) {
-    _feedItems = res.items
-    renderFeedUpdates()
+    res.items.forEach(it => { if (!_feedItems.find(x => x.id === it.id)) _feedItems.push(it) })
     renderFeedList()
   } else if (res && res.error) {
     alert('检查失败：' + res.error)
