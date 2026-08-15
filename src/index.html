@@ -272,7 +272,7 @@
     <div id="ff-move-folder-list" style="overflow-y:auto;border:1px solid #e0dfd8;border-radius:8px;max-height:340px"></div>
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn-sm" onclick="ffCloseMoveOverlay()">取消</button>
-      <button class="btn-sm green" id="ff-move-confirm-btn" onclick="ffConfirmMove()">确认移动</button>
+      <button class="btn-sm green" id="ff-move-confirm-btn" onclick="ffConfirmMove()" style="opacity:0.4;pointer-events:none">确认移动</button>
     </div>
   </div>
 </div>
@@ -988,8 +988,8 @@ async function ffMoveSelected() {
 
   countEl.textContent = `已选 ${checked.length} 个文件`
   _ffMoveTargetPath = null
-  confirmBtn.disabled = true
-  confirmBtn.style.opacity = '0.5'
+  confirmBtn.style.opacity = '0.4'
+  confirmBtn.style.pointerEvents = 'none'
   listEl.innerHTML = '<div style="padding:12px;color:#888780;font-size:12px">加载文件夹列表...</div>'
   overlay.style.display = 'flex'
 
@@ -1021,8 +1021,8 @@ function ffSelectMoveTarget(el, encodedPath) {
   el.style.color = '#534ab7'
   _ffMoveTargetPath = decodeURIComponent(encodedPath)
   const confirmBtn = document.getElementById('ff-move-confirm-btn')
-  confirmBtn.disabled = false
   confirmBtn.style.opacity = '1'
+  confirmBtn.style.pointerEvents = 'auto'
 }
 
 function ffCloseMoveOverlay() {
@@ -1031,10 +1031,11 @@ function ffCloseMoveOverlay() {
 }
 
 async function ffConfirmMove() {
-  if (!_ffMoveTargetPath) return
+  if (!_ffMoveTargetPath) { alert('请先选择目标文件夹'); return }
   const checked = document.querySelectorAll('#folder-files .ff-checkbox:checked')
   if (!checked.length) return
 
+  const targetPath = _ffMoveTargetPath  // 先保存，关闭浮层后不丢失
   const paths = [...checked].map(cb => decodeURIComponent(cb.getAttribute('data-path')))
   const names = [...checked].map(cb => {
     const row = cb.closest('.folder-file-item')
@@ -1045,7 +1046,7 @@ async function ffConfirmMove() {
 
   let successCount = 0, failNames = []
   for (let i = 0; i < paths.length; i++) {
-    const res = await window.api.moveFile({ srcPath: paths[i], destDir: _ffMoveTargetPath })
+    const res = await window.api.moveFile({ srcPath: paths[i], destDir: targetPath })
     if (res && res.success) { successCount++ }
     else { failNames.push(names[i] + (res ? '：' + res.error : '')) }
   }
