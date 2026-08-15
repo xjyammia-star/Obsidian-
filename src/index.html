@@ -1001,13 +1001,18 @@ async function ffMoveSelected() {
   }
 
   listEl.innerHTML = res.folders.map(f => {
-    const rel = f.label || f.relativePath || '根目录'
+    const rel = f.label || '根目录'
     const folderPath = f.value || f.path
     const ep = encodeURIComponent(folderPath)
+    // 根据路径层级计算缩进（根目录深度0，子文件夹按斜杠数计）
+    const depth = rel === '（根目录）' ? 0 : (rel.split('/').length)
+    const indent = depth * 16
+    const name = rel === '（根目录）' ? '（根目录）' : rel.split('/').pop()
     return `<div class="ff-folder-item" data-path="${ep}"
       onclick="ffSelectMoveTarget(this,'${ep}')"
-      style="padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:8px">
-      <span>📁</span><span>${rel}</span>
+      style="padding:8px 14px;padding-left:${14 + indent}px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:6px;transition:background 0.1s">
+      <span style="font-size:14px;opacity:0.7">📁</span>
+      <span>${name}</span>
     </div>`
   }).join('')
 }
