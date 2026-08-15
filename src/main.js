@@ -1672,3 +1672,193 @@ ${rawText.slice(0, 10000)}`
     return { success: false, error: err.message }
   }
 })
+
+// ── 订阅追踪 ──
+const { BrowserWindow: SubBrowserWindow } = require('electron')
+
+function getFeedStore() { return store.get('feeds', []) }
+function saveFeedStore(feeds) { store.set('feeds', feeds) }
+
+ipcMain.handle('feed-get-all', () => getFeedStore())
+
+ipcMain.handle('feed-add', (event, { platform, name, url }) => {
+  const feeds = getFeedStore()
+  feeds.push({ platform, name, url, lastCheck: null, seenIds: [] })
+  saveFeedStore(feeds)
+  return { success: true }
+})
+
+ipcMain.handle('feed-delete', (event, index) => {
+  const feeds = getFeedStore()
+  feeds.splice(index, 1)
+  saveFeedStore(feeds)
+  return { success: true }
+})
+
+ipcMain.handle('feed-open-login', async (event, index) => {
+  const feeds = getFeedStore()
+  const feed = feeds[index]
+  if (!feed) return { success: false, error: '订阅不存在' }
+  const platformUrls = {
+    xiaohongshu: 'https://www.xiaohongshu.com',
+    x: 'https://x.com',
+    instagram: 'https://www.instagram.com',
+    facebook: 'https://www.facebook.com'
+  }
+  const loginUrl = platformUrls[feed.platform] || feed.url
+  const ses = session.fromPartition('persist:feed-' + feed.platform)
+  const loginWin = new SubBrowserWindow({
+    width: 500, height: 700,
+    title: '登录 ' + feed.name,
+    webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true }
+  })
+  loginWin.loadURL(loginUrl)
+  return { success: true }
+})
+
+function getYoutubeChannelRssUrl(url) {
+  const m = url.match(/channel\/(UC[\w-]+)/)
+  if (m) return 'https://www.youtube.com/feeds/videos.xml?channel_id=' + m[1]
+  return null
+}
+
+async function fetchYoutubeRss(url) {
+  if (url.includes('feeds/videos.xml')) return url
+  const directRss = getYoutubeChannelRssUrl(url)
+  if (directRss) return directRss
+  const html = await fetchWebPage(url)
+  const match = html && (html.match(/"channelId":"(UC[\w-]+)"/) || html.match(/channel\/(UC[\w-]+)/))
+  if (match) return 'https://www.youtube.com/feeds/videos.xml?channel_id=' + match[1]
+  return null
+}
+
+async function parseYoutubeRss(rssUrl) {
+  const https = require('https')
+  return new Promise((resolve, reject) => {
+    const req = https.get(rssUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
+      let data = ''
+      res.on('data', c => data += c)
+      res.on('end', () => {
+        const items = []
+        const re = /<entry>([\s\S]*?)<\/entry>/g
+        let m
+        while ((m = re.exec(data)) !== null) {
+          const e = m[1]
+          const id = (e.match(/<yt:videoId>(.*?)<\/yt:videoId>/) || [])[1] || ''
+          const title = (e.match(/<title>(.*?)<\/title>/) || [])[1] || ''
+          const published = (e.match(/<published>(.*?)<\/published>/) || [])[1] || ''
+          const summary = (e.match(/<media:description>([\s\S]*?)<\/media:description>/) || [])[1]?.slice(0, 200) || ''
+          if (id) items.push({ id, title, url: 'https://www.youtube.com/watch?v=' + id, publishedAt: published, type: 'video', summary })
+        }
+        resolve(items)
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('RSS 请求超时')) })
+  })
+}
+
+async function checkFeedByBrowser(feed, ses) {
+  const { BrowserWindow: BW } = require('electron')
+  return new Promise((resolve) => {
+    const win = new BW({ width: 1200, height: 800, show: false,
+      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true } })
+    win.loadURL(feed.url)
+    const timeout = setTimeout(() => { try { win.destroy() } catch (_) {}; resolve([]) }, 25000)
+    win.webContents.on('did-finish-load', async () => {
+      clearTimeout(timeout)
+      try {
+        await new Promise(r => setTimeout(r, 3000))
+        const platform = feed.platform
+        const items = await win.webContents.executeJavaScript(`
+          (function() {
+            const items = [], platform = '${feed.platform}'
+            if (platform === 'xiaohongshu') {
+              document.querySelectorAll('section.note-item, .note-item').forEach(el => {
+                const title = el.querySelector('.title, .desc, .footer .title')?.textContent?.trim() || ''
+                const a = el.querySelector('a')
+                const link = a ? (a.href.startsWith('http') ? a.href : 'https://www.xiaohongshu.com' + a.getAttribute('href')) : ''
+                const type = el.querySelector('video, .video-mask') ? 'video' : 'article'
+                if (link) items.push({ title, url: link, type, summary: '', id: link.split('?')[0] })
+              })
+            } else if (platform === 'x') {
+              document.querySelectorAll('article[data-testid="tweet"]').forEach(el => {
+                const text = el.querySelector('[data-testid="tweetText"]')?.textContent?.trim() || ''
+                const linkEl = el.querySelector('a[href*="/status/"]')
+                const link = linkEl?.href || ''
+                const type = el.querySelector('video,[data-testid="videoPlayer"]') ? 'video' : el.querySelector('[data-testid="tweetPhoto"]') ? 'image' : 'tweet'
+                if (link) items.push({ title: text.slice(0,100), url: link, type, summary: text.slice(0,200), id: link.split('?')[0] })
+              })
+            } else if (platform === 'instagram') {
+              document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]').forEach(el => {
+                const link = el.href || ''
+                const alt = el.querySelector('img')?.alt || ''
+                const isReel = link.includes('/reel/')
+                if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0] })
+              })
+            } else if (platform === 'facebook') {
+              document.querySelectorAll('[role="article"]').forEach(el => {
+                const text = el.querySelector('[data-ad-preview="message"]')?.textContent?.trim() || el.querySelector('p')?.textContent?.trim() || ''
+                const a = el.querySelector('a[href*="/posts/"],a[href*="/videos/"],a[href*="/photo"]')
+                const link = a?.href || ''
+                const type = el.querySelector('video') ? 'video' : text ? 'article' : 'unknown'
+                if (link || text) items.push({ title: text.slice(0,100) || '内容', url: link, type, summary: text.slice(0,200), id: (link||text).slice(0,80) })
+              })
+            }
+            return [...new Map(items.map(x=>[x.id,x])).values()].slice(0,20)
+          })()
+        `)
+        try { win.destroy() } catch (_) {}
+        resolve(items || [])
+      } catch (e) {
+        try { win.destroy() } catch (_) {}
+        resolve([])
+      }
+    })
+  })
+}
+
+async function doCheckFeed(feed) {
+  if (feed.platform === 'youtube') {
+    const rssUrl = await fetchYoutubeRss(feed.url)
+    if (!rssUrl) throw new Error('无法获取频道 RSS 地址，请检查链接格式')
+    return await parseYoutubeRss(rssUrl)
+  } else {
+    const ses = session.fromPartition('persist:feed-' + feed.platform)
+    return await checkFeedByBrowser(feed, ses)
+  }
+}
+
+ipcMain.handle('feed-check-one', async (event, index) => {
+  const feeds = getFeedStore()
+  const feed = feeds[index]
+  if (!feed) return { success: false, error: '订阅不存在' }
+  try {
+    let items = await doCheckFeed(feed)
+    items = items.filter(it => !(feed.seenIds || []).includes(it.id))
+    items = items.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
+    feeds[index].seenIds = [...(feed.seenIds || []), ...items.map(it => it.id)].slice(-200)
+    feeds[index].lastCheck = new Date().toISOString()
+    saveFeedStore(feeds)
+    return { success: true, items }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('feed-check-all', async (event) => {
+  const feeds = getFeedStore()
+  const allItems = []
+  for (let i = 0; i < feeds.length; i++) {
+    try {
+      let items = await doCheckFeed(feeds[i])
+      items = items.filter(it => !(feeds[i].seenIds || []).includes(it.id))
+      items = items.map(it => ({ ...it, platform: feeds[i].platform, sourceName: feeds[i].name }))
+      feeds[i].seenIds = [...(feeds[i].seenIds || []), ...items.map(it => it.id)].slice(-200)
+      feeds[i].lastCheck = new Date().toISOString()
+      allItems.push(...items)
+    } catch (_) {}
+  }
+  saveFeedStore(feeds)
+  return { success: true, items: allItems }
+})

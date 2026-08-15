@@ -538,6 +538,16 @@
         <div style="font-size:13px;color:#888780;line-height:1.7">粘贴网页链接，AI 自动提取正文，过滤广告和无关内容，整理成笔记</div>
       </div>
 
+      <div class="panel" onclick="showAiSub('feed')" style="cursor:pointer;transition:box-shadow 0.15s;user-select:none;grid-column:1/-1" onmouseover="this.style.boxShadow='0 4px 16px rgba(83,74,183,0.12)'" onmouseout="this.style.boxShadow=''">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="font-size:36px">📡</div>
+          <div>
+            <div style="font-size:15px;font-weight:600;color:#2c2c2a;margin-bottom:4px">订阅追踪</div>
+            <div style="font-size:13px;color:#888780;line-height:1.7">追踪 YouTube、小红书、X、Instagram、Facebook 账号的最新内容，选择需要的让 AI 整理分析存入知识库</div>
+          </div>
+        </div>
+      </div>
+
     </div>
     <p style="font-size:12px;color:#b4b2a9;margin-top:16px;text-align:center">以上功能需要在「系统设置」中配置 API Key 后使用</p>
   </div>
@@ -846,10 +856,87 @@
   </div>
   <p style="font-size:12px;color:#b4b2a9;margin-top:8px;text-align:center">以上功能需要在「系统设置」中配置 API Key 后使用</p>
       </div>
+      <div id="ai-panel-feed" style="display:none">
+        <div class="panel">
+
+          <!-- 顶部：订阅列表 + 操作按钮 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div class="section-title" style="margin:0">📡 订阅追踪</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-sm" onclick="showAddFeedDialog()">＋ 添加订阅</button>
+              <button class="btn-sm green" onclick="checkAllFeeds()" id="btn-check-feeds">🔄 检查全部更新</button>
+            </div>
+          </div>
+
+          <!-- 订阅列表 -->
+          <div id="feed-list-empty" style="display:none;padding:32px;text-align:center;color:#b4b2a9;font-size:13px">
+            还没有订阅任何账号，点击「添加订阅」开始追踪
+          </div>
+          <div id="feed-list" style="margin-bottom:16px"></div>
+
+          <!-- 分隔线 -->
+          <div id="feed-updates-section" style="display:none">
+            <div style="border-top:1px solid #e8e6de;margin:16px 0"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="font-size:14px;font-weight:600;color:#2c2c2a" id="feed-updates-title">最新内容</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-sm" onclick="feedSelectAll(true)">全选</button>
+                <button class="btn-sm" onclick="feedSelectAll(false)">取消</button>
+                <button class="btn-sm green" onclick="processSelectedFeedItems()" id="btn-feed-process">✨ 处理选中内容</button>
+              </div>
+            </div>
+            <div id="feed-updates-list"></div>
+          </div>
+
+          <!-- 进度提示 -->
+          <div id="feed-progress" style="display:none;font-size:12px;color:#534ab7;padding:8px 0"></div>
+
+        </div>
+      </div>
     </div>
   </div>
 
-<!-- 设置页 -->
+<!-- 添加订阅弹窗 -->
+<div id="feed-add-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:24px;width:480px;box-shadow:0 8px 40px rgba(0,0,0,0.18)">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">＋ 添加订阅</div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#888780;margin-bottom:6px">平台</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="feed-platform-btns">
+        <button onclick="selectFeedPlatform('youtube')" class="feed-platform-btn active" data-platform="youtube" style="padding:6px 14px;border-radius:6px;border:1px solid #534ab7;background:#534ab7;color:#fff;font-size:12px;cursor:pointer;font-family:inherit">▶️ YouTube</button>
+        <button onclick="selectFeedPlatform('xiaohongshu')" class="feed-platform-btn" data-platform="xiaohongshu" style="padding:6px 14px;border-radius:6px;border:1px solid #d3d1c7;background:#fff;color:#5f5e5a;font-size:12px;cursor:pointer;font-family:inherit">🔴 小红书</button>
+        <button onclick="selectFeedPlatform('x')" class="feed-platform-btn" data-platform="x" style="padding:6px 14px;border-radius:6px;border:1px solid #d3d1c7;background:#fff;color:#5f5e5a;font-size:12px;cursor:pointer;font-family:inherit">𝕏 X</button>
+        <button onclick="selectFeedPlatform('instagram')" class="feed-platform-btn" data-platform="instagram" style="padding:6px 14px;border-radius:6px;border:1px solid #d3d1c7;background:#fff;color:#5f5e5a;font-size:12px;cursor:pointer;font-family:inherit">📷 Instagram</button>
+        <button onclick="selectFeedPlatform('facebook')" class="feed-platform-btn" data-platform="facebook" style="padding:6px 14px;border-radius:6px;border:1px solid #d3d1c7;background:#fff;color:#5f5e5a;font-size:12px;cursor:pointer;font-family:inherit">👤 Facebook</button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#888780;margin-bottom:6px">账号备注名称</div>
+      <input id="feed-name-input" type="text" placeholder="例如：我关注的AI博主"
+        style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;outline:none;box-sizing:border-box">
+    </div>
+
+    <div style="margin-bottom:6px">
+      <div style="font-size:12px;color:#888780;margin-bottom:6px">账号主页链接</div>
+      <input id="feed-url-input" type="text" placeholder="粘贴账号主页链接"
+        style="width:100%;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;outline:none;box-sizing:border-box">
+    </div>
+    <div id="feed-url-hint" style="font-size:11px;color:#b4b2a9;margin-bottom:16px;line-height:1.6">
+      例如：https://www.youtube.com/@channelname
+    </div>
+
+    <div id="feed-login-tip" style="display:none;padding:10px 14px;background:#eeedfe;border-radius:8px;font-size:12px;color:#3d3580;margin-bottom:16px;line-height:1.7">
+      📌 该平台需要登录才能追踪内容。添加后请点击「登录」按钮，在弹出的浏览器窗口中完成登录，之后程序会自动保存登录状态，无需重复登录。
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-sm" onclick="closeFeedAddDialog()">取消</button>
+      <button class="btn-sm green" onclick="confirmAddFeed()">确认添加</button>
+    </div>
+  </div>
+</div>
 <div id="page-settings" class="hidden">
   <div class="section-title">路径设置</div>
   <div class="settings-section">
@@ -1938,7 +2025,8 @@ const _aiSubTitles = {
   analyze: '📁 知识库内容分析',
   youtube: '🎬 YouTube 视频转笔记',
   audio:   '🎙️ 本地视频/音频转笔记',
-  web:     '🌐 网页内容转笔记'
+  web:     '🌐 网页内容转笔记',
+  feed:    '📡 订阅追踪'
 }
 
 function showAiSub(name) {
@@ -1946,12 +2034,12 @@ function showAiSub(name) {
   document.getElementById('ai-sub').style.display = ''
   document.getElementById('ai-sub-title').textContent = _aiSubTitles[name] || ''
   // 切换面板显示
-  ;['analyze','youtube','audio','web'].forEach(n => {
+  ;['analyze','youtube','audio','web','feed'].forEach(n => {
     const el = document.getElementById('ai-panel-'+n)
     if (el) el.style.display = n === name ? 'block' : 'none'
   })
-  // 触发初始化
   if (name === 'analyze') loadAnalyzeFolders()
+  if (name === 'feed') initFeedPage()
 }
 
 async function loadAnalyzeFolders() {
@@ -2204,6 +2292,233 @@ async function saveYtCaption() {
     msgEl.style.background = '#fcebeb'
     msgEl.style.color = '#a32d2d'
     msgEl.textContent = '❌ 保存失败：' + res.error
+  }
+}
+
+/* ── 订阅追踪 ── */
+const FEED_PLATFORMS = {
+  youtube:      { name: 'YouTube',    icon: '▶️', needLogin: false, hint: '例如：https://www.youtube.com/@channelname 或频道 ID' },
+  xiaohongshu:  { name: '小红书',     icon: '🔴', needLogin: true,  hint: '例如：https://www.xiaohongshu.com/user/profile/xxx' },
+  x:            { name: 'X',          icon: '𝕏',  needLogin: true,  hint: '例如：https://x.com/username' },
+  instagram:    { name: 'Instagram',  icon: '📷', needLogin: true,  hint: '例如：https://www.instagram.com/username/' },
+  facebook:     { name: 'Facebook',   icon: '👤', needLogin: true,  hint: '例如：https://www.facebook.com/pagename' }
+}
+
+let _feedPlatform = 'youtube'
+let _feedItems = []  // 当前检查到的新内容
+
+// ── 初始化订阅列表 ──
+function initFeedPage() {
+  renderFeedList()
+}
+
+async function renderFeedList() {
+  const feeds = await window.api.feedGetAll() || []
+  const listEl = document.getElementById('feed-list')
+  const emptyEl = document.getElementById('feed-list-empty')
+
+  if (!feeds || !feeds.length) {
+    emptyEl.style.display = 'block'
+    listEl.innerHTML = ''
+    return
+  }
+  emptyEl.style.display = 'none'
+  listEl.innerHTML = feeds.map((f, i) => {
+    const p = FEED_PLATFORMS[f.platform] || { icon: '📡', name: f.platform }
+    const lastCheck = f.lastCheck ? new Date(f.lastCheck).toLocaleDateString('zh-CN') : '从未检查'
+    const needLogin = FEED_PLATFORMS[f.platform]?.needLogin
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e8e6de;border-radius:10px;margin-bottom:8px;background:#fafaf8">
+      <span style="font-size:20px">${p.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;color:#2c2c2a">${f.name}</div>
+        <div style="font-size:11px;color:#b4b2a9;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.url}</div>
+        <div style="font-size:11px;color:#b4b2a9;margin-top:1px">上次检查：${lastCheck}</div>
+      </div>
+      <div style="display:flex;gap:5px;flex-shrink:0">
+        ${needLogin ? `<button class="btn-sm" onclick="feedLogin(${i})" style="white-space:nowrap">🔑 登录</button>` : ''}
+        <button class="btn-sm" onclick="checkOneFeed(${i})" style="white-space:nowrap">🔄 检查</button>
+        <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0;white-space:nowrap" onclick="deleteFeed(${i})">删除</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ── 添加订阅弹窗 ──
+function showAddFeedDialog() {
+  _feedPlatform = 'youtube'
+  document.getElementById('feed-name-input').value = ''
+  document.getElementById('feed-url-input').value = ''
+  selectFeedPlatform('youtube')
+  document.getElementById('feed-add-overlay').style.display = 'flex'
+}
+
+function closeFeedAddDialog() {
+  document.getElementById('feed-add-overlay').style.display = 'none'
+}
+
+function selectFeedPlatform(platform) {
+  _feedPlatform = platform
+  document.querySelectorAll('.feed-platform-btn').forEach(btn => {
+    const active = btn.dataset.platform === platform
+    btn.style.background = active ? '#534ab7' : '#fff'
+    btn.style.color = active ? '#fff' : '#5f5e5a'
+    btn.style.borderColor = active ? '#534ab7' : '#d3d1c7'
+  })
+  const p = FEED_PLATFORMS[platform]
+  document.getElementById('feed-url-hint').textContent = p?.hint || ''
+  document.getElementById('feed-login-tip').style.display = p?.needLogin ? 'block' : 'none'
+}
+
+async function confirmAddFeed() {
+  const name = document.getElementById('feed-name-input').value.trim()
+  const url = document.getElementById('feed-url-input').value.trim()
+  if (!name) { alert('请填写账号备注名称'); return }
+  if (!url) { alert('请填写账号主页链接'); return }
+
+  const res = await window.api.feedAdd({ platform: _feedPlatform, name, url })
+  if (res && res.success) {
+    closeFeedAddDialog()
+    renderFeedList()
+  } else {
+    alert('添加失败：' + (res?.error || '未知错误'))
+  }
+}
+
+async function deleteFeed(index) {
+  if (!confirm('确定删除这个订阅吗？')) return
+  await window.api.feedDelete(index)
+  renderFeedList()
+  document.getElementById('feed-updates-section').style.display = 'none'
+}
+
+async function feedLogin(index) {
+  await window.api.feedOpenLogin(index)
+}
+
+// ── 检查更新 ──
+async function checkAllFeeds() {
+  const btn = document.getElementById('btn-check-feeds')
+  btn.disabled = true
+  btn.textContent = '检查中...'
+  const progressEl = document.getElementById('feed-progress')
+  progressEl.style.display = 'block'
+  progressEl.textContent = '⏳ 正在检查所有订阅...'
+  _feedItems = []
+
+  const res = await window.api.feedCheckAll()
+  btn.disabled = false
+  btn.textContent = '🔄 检查全部更新'
+  progressEl.style.display = 'none'
+
+  if (res && res.items && res.items.length) {
+    _feedItems = res.items
+    renderFeedUpdates()
+    renderFeedList()
+  } else {
+    alert('没有新内容，或所有订阅均已是最新')
+  }
+}
+
+async function checkOneFeed(index) {
+  const progressEl = document.getElementById('feed-progress')
+  progressEl.style.display = 'block'
+  progressEl.textContent = '⏳ 检查中...'
+  _feedItems = []
+
+  const res = await window.api.feedCheckOne(index)
+  progressEl.style.display = 'none'
+
+  if (res && res.items && res.items.length) {
+    _feedItems = res.items
+    renderFeedUpdates()
+    renderFeedList()
+  } else if (res && res.error) {
+    alert('检查失败：' + res.error)
+  } else {
+    alert('没有新内容')
+  }
+}
+
+function renderFeedUpdates() {
+  const section = document.getElementById('feed-updates-section')
+  const listEl = document.getElementById('feed-updates-list')
+  const titleEl = document.getElementById('feed-updates-title')
+
+  section.style.display = 'block'
+  titleEl.textContent = `最新内容（${_feedItems.length} 条）`
+
+  const typeInfo = {
+    video:   { label: '视频',   color: '#534ab7', canProcess: true,  action: '转笔记' },
+    article: { label: '图文',   color: '#0f6e56', canProcess: true,  action: 'AI整理' },
+    tweet:   { label: '推文',   color: '#0f6e56', canProcess: true,  action: 'AI整理' },
+    image:   { label: '图片',   color: '#888780', canProcess: false, action: '不支持' },
+    unknown: { label: '未知',   color: '#888780', canProcess: false, action: '保存链接' }
+  }
+
+  listEl.innerHTML = _feedItems.map((item, i) => {
+    const p = FEED_PLATFORMS[item.platform] || { icon: '📡' }
+    const t = typeInfo[item.type] || typeInfo.unknown
+    const date = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : ''
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #e8e6de;border-radius:10px;margin-bottom:8px;background:#fff">
+      <input type="checkbox" class="feed-item-cb" data-index="${i}" style="margin-top:3px;width:15px;height:15px;accent-color:#534ab7;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:14px">${p.icon}</span>
+          <span style="font-size:11px;color:#888780">${item.sourceName || ''}</span>
+          <span style="font-size:11px;padding:1px 7px;border-radius:4px;background:${t.color}18;color:${t.color}">${t.label}</span>
+          ${date ? `<span style="font-size:11px;color:#b4b2a9">${date}</span>` : ''}
+        </div>
+        <div style="font-size:13px;font-weight:500;color:#2c2c2a;margin-bottom:4px;line-height:1.5">${item.title || '（无标题）'}</div>
+        ${item.summary ? `<div style="font-size:12px;color:#888780;line-height:1.6">${item.summary}</div>` : ''}
+      </div>
+      <div style="flex-shrink:0">
+        ${t.canProcess
+          ? `<button class="btn-sm green" onclick="processFeedItem(${i})" style="white-space:nowrap">${t.action}</button>`
+          : `<span style="font-size:11px;color:#b4b2a9">${t.action}</span>`}
+        <button class="btn-sm" onclick="openFeedItemLink(${i})" style="margin-top:4px;white-space:nowrap;display:block">打开链接</button>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function feedSelectAll(checked) {
+  document.querySelectorAll('.feed-item-cb').forEach(cb => { cb.checked = checked })
+}
+
+function openFeedItemLink(index) {
+  const item = _feedItems[index]
+  if (item && item.url) window.api.openFile(item.url)
+}
+
+async function processFeedItem(index) {
+  const item = _feedItems[index]
+  if (!item) return
+
+  if (item.type === 'video' && item.platform === 'youtube') {
+    // 跳转到 YouTube 转笔记，自动填入链接
+    showAiSub('youtube')
+    setTimeout(() => {
+      document.getElementById('yt-url-input').value = item.url
+    }, 100)
+  } else if (item.type === 'video') {
+    alert('该平台的视频内容暂不支持自动转录，请手动下载后使用「本地视频/音频转笔记」功能处理。')
+  } else if (item.type === 'article' || item.type === 'tweet') {
+    // 跳转到网页转笔记
+    showAiSub('web')
+    setTimeout(() => {
+      document.getElementById('web-url-input').value = item.url
+    }, 100)
+  } else {
+    alert('该内容类型暂不支持自动处理，已复制链接到剪贴板。')
+    navigator.clipboard.writeText(item.url || '')
+  }
+}
+
+async function processSelectedFeedItems() {
+  const checked = [...document.querySelectorAll('.feed-item-cb:checked')]
+  if (!checked.length) { alert('请先勾选要处理的内容'); return }
+  for (const cb of checked) {
+    await processFeedItem(parseInt(cb.dataset.index))
   }
 }
 
