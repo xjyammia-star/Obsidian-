@@ -1673,6 +1673,14 @@ ${rawText.slice(0, 10000)}`
   }
 })
 
+// ── 打开外部 URL（用系统默认浏览器）──
+ipcMain.handle('open-external-url', (event, url) => {
+  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+    shell.openExternal(url)
+  }
+  return { success: true }
+})
+
 // ── 订阅追踪 ──
 const { BrowserWindow: SubBrowserWindow, session } = require('electron')
 

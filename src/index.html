@@ -2658,7 +2658,7 @@ function feedSelectAll(checked) {
 
 function openFeedItemLink(index) {
   const item = _feedItems[index]
-  if (item && item.url) window.api.openFile(item.url)
+  if (item && item.url) window.api.openExternalUrl(item.url)
 }
 
 async function processFeedItem(index) {
