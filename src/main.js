@@ -1854,13 +1854,23 @@ async function checkFeedByBrowser(feed, ses) {
         const items = await win.webContents.executeJavaScript(`
           (function() {
             const items = [], platform = '${feed.platform}'
+            // 辅助函数：从时间元素提取 ISO 时间字符串
+            function getTime(el) {
+              const t = el.querySelector('time')
+              if (t) return t.getAttribute('datetime') || t.getAttribute('title') || ''
+              const abbr = el.querySelector('abbr[data-original-title], abbr[title]')
+              if (abbr) return abbr.getAttribute('data-original-title') || abbr.getAttribute('title') || ''
+              return ''
+            }
+
             if (platform === 'xiaohongshu') {
               document.querySelectorAll('section.note-item, .note-item').forEach(el => {
                 const title = el.querySelector('.title, .desc, .footer .title')?.textContent?.trim() || ''
                 const a = el.querySelector('a')
                 const link = a ? (a.href.startsWith('http') ? a.href : 'https://www.xiaohongshu.com' + a.getAttribute('href')) : ''
                 const type = el.querySelector('video, .video-mask') ? 'video' : 'article'
-                if (link) items.push({ title, url: link, type, summary: '', id: link.split('?')[0] })
+                const publishedAt = getTime(el)
+                if (link) items.push({ title, url: link, type, summary: '', id: link.split('?')[0], publishedAt })
               })
             } else if (platform === 'x') {
               document.querySelectorAll('article[data-testid="tweet"]').forEach(el => {
@@ -1868,22 +1878,44 @@ async function checkFeedByBrowser(feed, ses) {
                 const linkEl = el.querySelector('a[href*="/status/"]')
                 const link = linkEl?.href || ''
                 const type = el.querySelector('video,[data-testid="videoPlayer"]') ? 'video' : el.querySelector('[data-testid="tweetPhoto"]') ? 'image' : 'tweet'
-                if (link) items.push({ title: text.slice(0,100), url: link, type, summary: text.slice(0,200), id: link.split('?')[0] })
+                // X 的时间在 <time> 标签里
+                const timeEl = el.querySelector('time')
+                const publishedAt = timeEl ? (timeEl.getAttribute('datetime') || '') : ''
+                if (link) items.push({ title: text.slice(0,100), url: link, type, summary: text.slice(0,200), id: link.split('?')[0], publishedAt })
               })
             } else if (platform === 'instagram') {
-              document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]').forEach(el => {
-                const link = el.href || ''
+              // Instagram 主页的帖子时间在 article 里的 time 标签
+              document.querySelectorAll('article').forEach(el => {
+                const a = el.querySelector('a[href*="/p/"],a[href*="/reel/"]')
+                const link = a?.href || ''
                 const alt = el.querySelector('img')?.alt || ''
                 const isReel = link.includes('/reel/')
-                if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0] })
+                const timeEl = el.querySelector('time')
+                const publishedAt = timeEl ? (timeEl.getAttribute('datetime') || '') : ''
+                if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt })
               })
+              // 备用：主页帖子列表（未展开时）
+              if (!items.length) {
+                document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]').forEach(el => {
+                  const link = el.href || ''
+                  const alt = el.querySelector('img')?.alt || ''
+                  const isReel = link.includes('/reel/')
+                  if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt: '' })
+                })
+              }
             } else if (platform === 'facebook') {
               document.querySelectorAll('[role="article"]').forEach(el => {
                 const text = el.querySelector('[data-ad-preview="message"]')?.textContent?.trim() || el.querySelector('p')?.textContent?.trim() || ''
                 const a = el.querySelector('a[href*="/posts/"],a[href*="/videos/"],a[href*="/photo"]')
                 const link = a?.href || ''
                 const type = el.querySelector('video') ? 'video' : text ? 'article' : 'unknown'
-                if (link || text) items.push({ title: text.slice(0,100) || '内容', url: link, type, summary: text.slice(0,200), id: (link||text).slice(0,80) })
+                const timeEl = el.querySelector('abbr[data-utime], abbr[title], time')
+                let publishedAt = ''
+                if (timeEl) {
+                  const utime = timeEl.getAttribute('data-utime')
+                  publishedAt = utime ? new Date(parseInt(utime)*1000).toISOString() : (timeEl.getAttribute('datetime') || timeEl.getAttribute('title') || '')
+                }
+                if (link || text) items.push({ title: text.slice(0,100) || '内容', url: link, type, summary: text.slice(0,200), id: (link||text).slice(0,80), publishedAt })
               })
             }
             return [...new Map(items.map(x=>[x.id,x])).values()].slice(0,20)
