@@ -1343,6 +1343,10 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
         settings.apiKey, settings.endpoint, videoPath
       )
 
+      // 等待文件处理完毕（status 变为 active），否则调用模型会报 InvalidState
+      sendProgress('文件上传成功，等待服务器处理...')
+      await waitFileActive(settings.apiKey, settings.endpoint, uploadedFileId)
+
       sendProgress('AI 视觉识别中，请稍候（约1~2分钟）...')
 
       // 调 Doubao 全模态模型逐帧识别字幕
