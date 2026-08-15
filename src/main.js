@@ -1695,10 +1695,31 @@ ipcMain.handle('feed-delete', (event, index) => {
   return { success: true }
 })
 
+// 各平台登录检测：检查 cookies 里有没有登录凭证
+async function checkPlatformLogin(platform, ses) {
+  const cookies = await ses.cookies.get({})
+  const cookieMap = {}
+  cookies.forEach(c => { cookieMap[c.name] = c.value })
+
+  switch (platform) {
+    case 'xiaohongshu':
+      return !!(cookieMap['web_session'] || cookieMap['a1'] || cookieMap['webId'])
+    case 'x':
+      return !!(cookieMap['auth_token'] || cookieMap['ct0'])
+    case 'instagram':
+      return !!(cookieMap['sessionid'] || cookieMap['ds_user_id'])
+    case 'facebook':
+      return !!(cookieMap['c_user'] || cookieMap['xs'])
+    default:
+      return false
+  }
+}
+
 ipcMain.handle('feed-open-login', async (event, index) => {
   const feeds = getFeedStore()
   const feed = feeds[index]
   if (!feed) return { success: false, error: '订阅不存在' }
+
   const platformUrls = {
     xiaohongshu: 'https://www.xiaohongshu.com',
     x: 'https://x.com',
@@ -1707,13 +1728,65 @@ ipcMain.handle('feed-open-login', async (event, index) => {
   }
   const loginUrl = platformUrls[feed.platform] || feed.url
   const ses = session.fromPartition('persist:feed-' + feed.platform)
-  const loginWin = new SubBrowserWindow({
-    width: 500, height: 700,
-    title: '登录 ' + feed.name,
-    webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true }
+
+  // 先检查是否已经登录
+  const alreadyLoggedIn = await checkPlatformLogin(feed.platform, ses)
+  if (alreadyLoggedIn) {
+    return { success: true, alreadyLoggedIn: true }
+  }
+
+  return new Promise((resolve) => {
+    const loginWin = new SubBrowserWindow({
+      width: 520, height: 700,
+      title: '登录 ' + feed.name + '（登录成功后请关闭此窗口）',
+      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true }
+    })
+    loginWin.loadURL(loginUrl)
+    loginWin.setMenu(null)
+
+    // 页面跳转时持续检测登录状态
+    loginWin.webContents.on('did-navigate', async () => {
+      const loggedIn = await checkPlatformLogin(feed.platform, ses)
+      if (loggedIn) {
+        // 登录成功，更新存储
+        const feeds2 = getFeedStore()
+        feeds2[index].loggedIn = true
+        saveFeedStore(feeds2)
+        // 通知渲染进程
+        try { event.sender.send('feed-login-success', index) } catch (_) {}
+        // 延迟关闭窗口，让用户看到成功状态
+        setTimeout(() => { try { loginWin.destroy() } catch (_) {} }, 1500)
+        resolve({ success: true, loggedIn: true })
+      }
+    })
+
+    // 用户手动关闭窗口
+    loginWin.on('closed', async () => {
+      const loggedIn = await checkPlatformLogin(feed.platform, ses)
+      if (loggedIn) {
+        const feeds2 = getFeedStore()
+        feeds2[index].loggedIn = true
+        saveFeedStore(feeds2)
+        try { event.sender.send('feed-login-success', index) } catch (_) {}
+        resolve({ success: true, loggedIn: true })
+      } else {
+        resolve({ success: true, loggedIn: false })
+      }
+    })
   })
-  loginWin.loadURL(loginUrl)
-  return { success: true }
+})
+
+ipcMain.handle('feed-check-login', async (event, index) => {
+  const feeds = getFeedStore()
+  const feed = feeds[index]
+  if (!feed) return { loggedIn: false }
+  const ses = session.fromPartition('persist:feed-' + feed.platform)
+  const loggedIn = await checkPlatformLogin(feed.platform, ses)
+  if (loggedIn && !feed.loggedIn) {
+    feeds[index].loggedIn = true
+    saveFeedStore(feeds)
+  }
+  return { loggedIn }
 })
 
 function getYoutubeChannelRssUrl(url) {

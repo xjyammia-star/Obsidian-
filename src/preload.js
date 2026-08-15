@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('api', {
   feedAdd:           (args)      => ipcRenderer.invoke('feed-add', args),
   feedDelete:        (index)     => ipcRenderer.invoke('feed-delete', index),
   feedOpenLogin:     (index)     => ipcRenderer.invoke('feed-open-login', index),
+  feedCheckLogin:    (index)     => ipcRenderer.invoke('feed-check-login', index),
+  onFeedLoginSuccess:(cb)        => ipcRenderer.on('feed-login-success', (_e, index) => cb(index)),
   feedCheckOne:      (index)     => ipcRenderer.invoke('feed-check-one', index),
   feedCheckAll:      ()          => ipcRenderer.invoke('feed-check-all'),
   getTagStats:       (vaultPath) => ipcRenderer.invoke('get-tag-stats', vaultPath),

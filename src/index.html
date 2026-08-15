@@ -2309,6 +2309,7 @@ let _feedItems = []  // 当前检查到的新内容
 
 // ── 初始化订阅列表 ──
 function initFeedPage() {
+  initFeedLoginListener()
   renderFeedList()
 }
 
@@ -2325,17 +2326,23 @@ async function renderFeedList() {
   emptyEl.style.display = 'none'
   listEl.innerHTML = feeds.map((f, i) => {
     const p = FEED_PLATFORMS[f.platform] || { icon: '📡', name: f.platform }
-    const lastCheck = f.lastCheck ? new Date(f.lastCheck).toLocaleDateString('zh-CN') : '从未检查'
+    const lastCheck = f.lastCheck ? new Date(f.lastCheck).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '从未检查'
     const needLogin = FEED_PLATFORMS[f.platform]?.needLogin
+    const loginStatus = f.loggedIn
+      ? `<span id="feed-login-badge-${i}" style="font-size:11px;color:#0f6e56">✅ 已登录</span>`
+      : `<span id="feed-login-badge-${i}" style="font-size:11px;color:#a32d2d">⚠️ 未登录</span>`
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e8e6de;border-radius:10px;margin-bottom:8px;background:#fafaf8">
       <span style="font-size:20px">${p.icon}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:#2c2c2a">${f.name}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:500;color:#2c2c2a">${f.name}</span>
+          ${needLogin ? loginStatus : ''}
+        </div>
         <div style="font-size:11px;color:#b4b2a9;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.url}</div>
         <div style="font-size:11px;color:#b4b2a9;margin-top:1px">上次检查：${lastCheck}</div>
       </div>
       <div style="display:flex;gap:5px;flex-shrink:0">
-        ${needLogin ? `<button class="btn-sm" onclick="feedLogin(${i})" style="white-space:nowrap">🔑 登录</button>` : ''}
+        ${needLogin ? `<button class="btn-sm" onclick="feedLogin(${i})" style="white-space:nowrap">${f.loggedIn ? '🔑 重新登录' : '🔑 登录'}</button>` : ''}
         <button class="btn-sm" onclick="checkOneFeed(${i})" style="white-space:nowrap">🔄 检查</button>
         <button class="btn-sm" style="color:#a32d2d;border-color:#f0c0c0;white-space:nowrap" onclick="deleteFeed(${i})">删除</button>
       </div>
@@ -2392,7 +2399,29 @@ async function deleteFeed(index) {
 }
 
 async function feedLogin(index) {
-  await window.api.feedOpenLogin(index)
+  const res = await window.api.feedOpenLogin(index)
+  if (res && res.alreadyLoggedIn) {
+    alert('已经是登录状态，无需重新登录 ✅')
+    return
+  }
+  if (res && res.loggedIn) {
+    alert('登录成功 ✅')
+    renderFeedList()
+  }
+  // 同时监听登录成功事件（窗口内登录后自动触发）
+}
+
+// 初始化时注册登录成功监听
+function initFeedLoginListener() {
+  window.api.onFeedLoginSuccess && window.api.onFeedLoginSuccess((index) => {
+    renderFeedList()
+    // 在订阅列表里更新登录状态徽标
+    const badge = document.getElementById('feed-login-badge-' + index)
+    if (badge) {
+      badge.textContent = '✅ 已登录'
+      badge.style.color = '#0f6e56'
+    }
+  })
 }
 
 // ── 检查更新 ──
