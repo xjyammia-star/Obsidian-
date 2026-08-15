@@ -1001,8 +1001,9 @@ async function ffMoveSelected() {
   }
 
   listEl.innerHTML = res.folders.map(f => {
-    const rel = f.relativePath || f.path.replace(currentVaultPath, '').replace(/^[\\/]/, '') || '根目录'
-    const ep = encodeURIComponent(f.path)
+    const rel = f.label || f.relativePath || '根目录'
+    const folderPath = f.value || f.path
+    const ep = encodeURIComponent(folderPath)
     return `<div class="ff-folder-item" data-path="${ep}"
       onclick="ffSelectMoveTarget(this,'${ep}')"
       style="padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:8px">
