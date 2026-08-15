@@ -31,7 +31,9 @@
     "sharp": "^0.35.3"
   },
   "dependencies": {
+    "@mozilla/readability": "^0.6.0",
     "chokidar": "^3.5.3",
-    "electron-store": "^8.1.0"
+    "electron-store": "^8.1.0",
+    "jsdom": "^24.1.3"
   }
 }
