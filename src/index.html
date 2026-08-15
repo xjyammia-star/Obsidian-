@@ -896,6 +896,25 @@
     </div>
   </div>
 
+<!-- 订阅内容整理结果弹窗 -->
+<div id="feed-note-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:24px;width:600px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.18)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div id="feed-note-title" style="font-size:14px;font-weight:600;color:#2c2c2a;flex:1;margin-right:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+      <button onclick="closeFeedNoteOverlay()" style="border:none;background:none;font-size:18px;cursor:pointer;color:#888780;flex-shrink:0">✕</button>
+    </div>
+    <div id="feed-note-translated" style="display:none;padding:6px 10px;background:#eeedfe;border-radius:6px;font-size:11px;color:#534ab7;margin-bottom:10px">
+      🌐 内容已翻译为中文，原文保留在笔记末尾
+    </div>
+    <div id="feed-note-content" style="flex:1;overflow-y:auto;background:#f5f4f0;border-radius:8px;padding:14px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:400px"></div>
+    <div id="feed-note-save-msg" style="display:none;padding:8px 10px;border-radius:6px;font-size:12px;margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+      <button class="btn-sm" onclick="copyFeedNote()">📋 复制</button>
+      <button class="btn-sm green" onclick="saveFeedNote()">💾 保存为笔记</button>
+    </div>
+  </div>
+</div>
+
 <!-- 添加订阅弹窗 -->
 <div id="feed-add-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:9999;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:24px;width:480px;box-shadow:0 8px 40px rgba(0,0,0,0.18)">
@@ -2374,7 +2393,7 @@ async function renderFeedList() {
         <div id="feed-result-body-${platform}">
           ${platformItems.map((item, gi) => {
             const globalIdx = _feedItems.indexOf(item)
-            const typeInfo = { video:{label:'视频',color:'#534ab7',canProcess:true,action:'转笔记'}, article:{label:'图文',color:'#0f6e56',canProcess:true,action:'AI整理'}, tweet:{label:'推文',color:'#0f6e56',canProcess:true,action:'AI整理'}, image:{label:'图片',color:'#888780',canProcess:false,action:'不支持'}, unknown:{label:'未知',color:'#888780',canProcess:false,action:'保存链接'} }
+            const typeInfo = { video:{label:'视频',color:'#534ab7',canProcess:true,action:'整理配文'}, article:{label:'图文',color:'#0f6e56',canProcess:true,action:'AI整理'}, tweet:{label:'推文',color:'#0f6e56',canProcess:true,action:'AI整理'}, image:{label:'图片',color:'#888780',canProcess:true,action:'整理配文'}, unknown:{label:'未知',color:'#888780',canProcess:true,action:'AI整理'} }
             const t = typeInfo[item.type] || typeInfo.unknown
             const date = item.publishedAt ? new Date(item.publishedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
             return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-top:1px solid #f1efe8;background:#fff">
@@ -2617,11 +2636,11 @@ function renderFeedUpdates() {
   titleEl.textContent = `最新内容（${_feedItems.length} 条）`
 
   const typeInfo = {
-    video:   { label: '视频',   color: '#534ab7', canProcess: true,  action: '转笔记' },
-    article: { label: '图文',   color: '#0f6e56', canProcess: true,  action: 'AI整理' },
-    tweet:   { label: '推文',   color: '#0f6e56', canProcess: true,  action: 'AI整理' },
-    image:   { label: '图片',   color: '#888780', canProcess: false, action: '不支持' },
-    unknown: { label: '未知',   color: '#888780', canProcess: false, action: '保存链接' }
+    video:   { label: '视频',   color: '#534ab7', canProcess: true, action: '整理配文' },
+    article: { label: '图文',   color: '#0f6e56', canProcess: true, action: 'AI整理' },
+    tweet:   { label: '推文',   color: '#0f6e56', canProcess: true, action: 'AI整理' },
+    image:   { label: '图片',   color: '#888780', canProcess: true, action: '整理配文' },
+    unknown: { label: '未知',   color: '#888780', canProcess: true, action: 'AI整理' }
   }
 
   listEl.innerHTML = _feedItems.map((item, i) => {
@@ -2666,22 +2685,121 @@ async function processFeedItem(index) {
   if (!item) return
 
   if (item.type === 'video' && item.platform === 'youtube') {
-    // 跳转到 YouTube 转笔记，自动填入链接
+    // YouTube 视频：跳转到转笔记功能
     showAiSub('youtube')
-    setTimeout(() => {
-      document.getElementById('yt-url-input').value = item.url
-    }, 100)
-  } else if (item.type === 'video') {
-    alert('该平台的视频内容暂不支持自动转录，请手动下载后使用「本地视频/音频转笔记」功能处理。')
-  } else if (item.type === 'article' || item.type === 'tweet') {
-    // 跳转到网页转笔记
-    showAiSub('web')
-    setTimeout(() => {
-      document.getElementById('web-url-input').value = item.url
-    }, 100)
+    setTimeout(() => { document.getElementById('yt-url-input').value = item.url }, 100)
+
+  } else if ((item.type === 'video' || item.type === 'image') && item.summary) {
+    // 视频/图片有配文：整理配文
+    await processFeedCaption(item, index)
+
+  } else if (item.type === 'article' || item.type === 'tweet' || item.type === 'unknown') {
+    // 图文/推文：跳转网页转笔记
+    if (item.url) {
+      showAiSub('web')
+      setTimeout(() => { document.getElementById('web-url-input').value = item.url }, 100)
+    } else if (item.summary || item.title) {
+      await processFeedCaption(item, index)
+    } else {
+      alert('该内容没有可整理的文字信息')
+    }
+
+  } else if (item.summary || item.title) {
+    // 其他有文字的内容
+    await processFeedCaption(item, index)
+
   } else {
-    alert('该内容类型暂不支持自动处理，已复制链接到剪贴板。')
-    navigator.clipboard.writeText(item.url || '')
+    alert('该内容没有可整理的文字信息，请点「打开链接」在浏览器中查看')
+  }
+}
+
+async function processFeedCaption(item, index) {
+  const settings = await window.api.getAiSettings()
+  if (!settings.apiKey) { alert('请先在系统设置中配置 API Key'); return }
+
+  const btn = document.querySelector(`[onclick="processFeedItem(${index})"]`)
+  if (btn) { btn.disabled = true; btn.textContent = '处理中...' }
+
+  const text = [item.title, item.summary].filter(Boolean).join('\n\n')
+  const platform = item.platform
+  const sourceName = item.sourceName || ''
+  const date = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('zh-CN') : '日期未知'
+
+  const res = await window.api.processFeedCaption({
+    text, platform, sourceName, url: item.url || '', date,
+    type: item.type
+  })
+
+  if (btn) { btn.disabled = false; btn.textContent = item.type === 'video' ? '整理配文' : 'AI整理' }
+
+  if (!res || !res.success) {
+    alert('整理失败：' + (res?.error || '未知错误'))
+    return
+  }
+
+  // 显示结果弹窗
+  showFeedNoteResult(res.note, item, res.isTranslated)
+}
+
+let _feedNoteItem = null
+let _feedNoteContent = null
+
+function showFeedNoteResult(note, item, isTranslated) {
+  _feedNoteItem = item
+  _feedNoteContent = note
+
+  // 复用 web-result 风格，用一个简单的弹层显示
+  const overlay = document.getElementById('feed-note-overlay')
+  document.getElementById('feed-note-title').textContent =
+    (item.sourceName || '') + '：' + (item.title || '').slice(0, 40)
+  document.getElementById('feed-note-content').textContent = note
+  document.getElementById('feed-note-translated').style.display = isTranslated ? 'block' : 'none'
+  overlay.style.display = 'flex'
+}
+
+function closeFeedNoteOverlay() {
+  document.getElementById('feed-note-overlay').style.display = 'none'
+}
+
+function copyFeedNote() {
+  if (!_feedNoteContent) return
+  navigator.clipboard.writeText(_feedNoteContent).then(() => {
+    const btn = event.target
+    btn.textContent = '✅ 已复制'
+    setTimeout(() => { btn.textContent = '📋 复制' }, 2000)
+  })
+}
+
+async function saveFeedNote() {
+  if (!_feedNoteContent || !_feedNoteItem) return
+  const settings = await window.api.getAiSettings()
+  const inboxPath = settings.inboxFolder || currentInboxPath || null
+  if (!inboxPath) { alert('请先在设置中配置待处理文件库路径'); return }
+
+  const item = _feedNoteItem
+  const safeTitle = (item.title || '订阅内容').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
+  const now = new Date()
+  const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+  const platformName = { youtube:'YouTube', xiaohongshu:'小红书', x:'X', instagram:'Instagram', facebook:'Facebook' }[item.platform] || item.platform
+
+  const body = `---\ntitle: "${safeTitle}"\nsource: "${item.url || ''}"\nplatform: "${platformName}"\nauthor: "${item.sourceName || ''}"\ndate: "${dateStr}"\ntags: []\n---\n\n${_feedNoteContent}`
+
+  const res = await window.api.createNote({
+    vaultPath: currentVaultPath,
+    targetDir: inboxPath,
+    title: `${platformName}_${safeTitle}_${dateStr}`,
+    template: 'blank',
+    body
+  })
+
+  const msgEl = document.getElementById('feed-note-save-msg')
+  msgEl.style.display = 'block'
+  if (res.success) {
+    msgEl.style.background = '#eaf3de'; msgEl.style.color = '#3b6d11'
+    msgEl.textContent = '✅ 已保存到：' + res.path
+  } else {
+    msgEl.style.background = '#fcebeb'; msgEl.style.color = '#a32d2d'
+    msgEl.textContent = '❌ 保存失败：' + res.error
   }
 }
 

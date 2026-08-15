@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
   searchFiles:       (args)      => ipcRenderer.invoke('search-files', args),
   openFile:          (filePath)  => ipcRenderer.invoke('open-file', filePath),
   openExternalUrl:   (url)       => ipcRenderer.invoke('open-external-url', url),
+  processFeedCaption:(args)      => ipcRenderer.invoke('process-feed-caption', args),
   openInObsidian:    (filePath)  => ipcRenderer.invoke('open-in-obsidian', filePath),
   importFiles:       (args)      => ipcRenderer.invoke('import-files', args),
   selectImportFiles: ()          => ipcRenderer.invoke('select-import-files'),

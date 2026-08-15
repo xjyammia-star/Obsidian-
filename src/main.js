@@ -1673,6 +1673,69 @@ ${rawText.slice(0, 10000)}`
   }
 })
 
+// ── 整理订阅内容配文（支持翻译）──
+ipcMain.handle('process-feed-caption', async (event, { text, platform, sourceName, url, date, type }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先配置 API Key' }
+  }
+  try {
+    const platformNames = { youtube:'YouTube', xiaohongshu:'小红书', x:'X', instagram:'Instagram', facebook:'Facebook' }
+    const platformName = platformNames[platform] || platform
+    const typeLabel = type === 'video' ? '视频' : type === 'image' ? '图片' : '内容'
+
+    // 检测是否为非中文内容
+    const chineseRatio = (text.match(/[\u4e00-\u9fff]/g) || []).length / text.length
+    const needTranslate = chineseRatio < 0.1 && text.length > 20
+
+    const prompt = needTranslate
+      ? `以下是来自 ${platformName}「${sourceName}」发布的${typeLabel}的配文内容（发布于${date}）。
+
+请按以下格式整理：
+1. 用中文写一段简洁的笔记摘要，概括主要内容和关键信息
+2. 如有具体数据、人名、地点等重要信息请保留
+3. 最后附上原文
+
+配文原文：
+${text}
+
+输出格式：
+## 📝 内容摘要（中文）
+[你的中文摘要]
+
+## 📌 关键信息
+[重要的人名、地点、数据等，如无则省略此节]
+
+## 🔗 来源
+平台：${platformName}
+账号：${sourceName}
+日期：${date}
+链接：${url || '无'}
+
+---
+## 原文
+${text}`
+      : `以下是来自 ${platformName}「${sourceName}」发布的${typeLabel}的配文内容（发布于${date}）。
+
+请整理成简洁的笔记，包含：内容摘要、关键信息，并注明来源。
+
+配文内容：
+${text}
+
+来源信息：平台 ${platformName}，账号 ${sourceName}，日期 ${date}，链接 ${url || '无'}`
+
+    const reply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: prompt }],
+      2000
+    )
+
+    return { success: true, note: reply, isTranslated: needTranslate }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 // ── 打开外部 URL（用系统默认浏览器）──
 ipcMain.handle('open-external-url', (event, url) => {
   if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
