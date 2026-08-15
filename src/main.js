@@ -1161,15 +1161,18 @@ ipcMain.handle('select-cookies-file', async () => {
 // ── YouTube 字幕抓取（基于 yt-dlp）──
 const { execFile, execSync } = require('child_process')
 const os = require('os')
+const isWin = process.platform === 'win32'
 
 function getYtDlpPath() {
-  // 优先用项目目录下的 yt-dlp
-  const localPath = path.join(__dirname, '..', 'yt-dlp.exe')
+  // 优先用项目目录下的 yt-dlp（Windows 用 .exe，Mac/Linux 不带后缀）
+  const localName = isWin ? 'yt-dlp.exe' : 'yt-dlp'
+  const localPath = path.join(__dirname, '..', localName)
   if (fs.existsSync(localPath)) return localPath
   // 再找系统 PATH
   try {
-    const which = execSync('where yt-dlp', { timeout: 3000 }).toString().trim().split('\n')[0].trim()
-    if (which) return which
+    const whichCmd = isWin ? 'where yt-dlp' : 'which yt-dlp'
+    const found = execSync(whichCmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim()
+    if (found) return found
   } catch (_) {}
   return null
 }
@@ -1178,12 +1181,16 @@ async function ensureYtDlp(sendProgress) {
   const existing = getYtDlpPath()
   if (existing) return existing
 
-  // 自动下载 yt-dlp.exe 到项目目录
+  // 自动下载 yt-dlp 到项目目录（按平台选择文件）
   sendProgress('首次使用：正在自动安装 yt-dlp（约 10MB，只需一次）...')
-  const destPath = path.join(__dirname, '..', 'yt-dlp.exe')
+  const ytDlpFileName = isWin ? 'yt-dlp.exe' : 'yt-dlp'
+  const destPath = path.join(__dirname, '..', ytDlpFileName)
+  const ytDlpDownloadUrl = isWin
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'
   return new Promise((resolve, reject) => {
     const https = require('https')
-    const url = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    const url = ytDlpDownloadUrl
     const followRedirect = (urlStr) => {
       const u = new URL(urlStr)
       const req = https.request({ hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
@@ -1193,7 +1200,12 @@ async function ensureYtDlp(sendProgress) {
         }
         const file = fs.createWriteStream(destPath)
         res.pipe(file)
-        file.on('finish', () => { file.close(); resolve(destPath) })
+        file.on('finish', () => {
+          file.close()
+          // Mac/Linux 需要添加执行权限
+          if (!isWin) { try { fs.chmodSync(destPath, 0o755) } catch (_) {} }
+          resolve(destPath)
+        })
         file.on('error', reject)
       })
       req.on('error', reject)
