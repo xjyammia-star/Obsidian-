@@ -828,10 +828,14 @@
     </div>
     <div class="settings-row">
       <div class="settings-label">🍪 YouTube Cookies</div>
-      <input type="text" id="yt-cookies-file" placeholder="cookies.txt 文件路径（选填，用于访问有地区限制的视频）"
+      <input type="text" id="yt-cookies-file" placeholder="cookies.txt 文件路径（选填）"
         style="flex:1;padding:6px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none"
         onchange="saveAiSettings()">
       <button class="btn-sm" style="margin-left:8px;white-space:nowrap" onclick="selectYtCookiesFile()">选择文件</button>
+    </div>
+    <div style="font-size:11px;color:#b4b2a9;padding:0 0 8px 0;line-height:1.7">
+      填入后程序会以你的 YouTube 账号身份访问视频，可解决因未登录导致的访问失败。<br>
+      注意：有地区版权限制的视频（如某些影视剧）配置 Cookies 也无法访问，需要 VPN。
     </div>
     <div class="settings-row">
       <div class="settings-label">🌐 接入点</div>
