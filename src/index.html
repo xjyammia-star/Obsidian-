@@ -2410,15 +2410,11 @@ async function checkAllFeeds() {
   btn.textContent = '🔄 检查全部更新'
   progressEl.style.display = 'none'
 
-  if (res && res.firstCheckNames && res.firstCheckNames.length) {
-    const msg = `已完成初始化：${res.firstCheckNames.join('、')}\n✅ 当前内容已记录为已读，下次检查将只显示新发布的内容。`
-    if (res.items && res.items.length) {
-      alert(msg)
-    } else {
-      alert(msg)
-      renderFeedList()
-      return
-    }
+  if (res && res.firstCheckResults && res.firstCheckResults.length) {
+    const initMsg = res.firstCheckResults.map(r =>
+      r.count > 0 ? `「${r.name}」今日 ${r.count} 条新内容` : `「${r.name}」今日无新内容`
+    ).join('\n')
+    alert(`以下订阅完成首次初始化：\n${initMsg}\n\n之后检查将只显示 ${new Date().toLocaleDateString('zh-CN')} 之后发布的新内容。`)
   }
 
   if (res && res.items && res.items.length) {
@@ -2427,7 +2423,9 @@ async function checkAllFeeds() {
     renderFeedList()
   } else {
     renderFeedList()
-    alert('没有新内容，所有订阅均已是最新')
+    if (!res?.firstCheckResults?.length) {
+      alert('没有新内容，所有订阅均已是最新')
+    }
   }
 }
 
@@ -2442,7 +2440,15 @@ async function checkOneFeed(index) {
 
   if (res && res.isFirstCheck) {
     renderFeedList()
-    alert(`「${res.sourceName}」初始化完成 ✅\n当前内容已记录为已读，下次检查将只显示新发布的内容。`)
+    if (res.hasToday && res.items.length > 0) {
+      // 今天有新内容，显示出来
+      _feedItems = res.items
+      renderFeedUpdates()
+      alert(`「${res.sourceName}」初始化完成 ✅\n今日有 ${res.items.length} 条新发布内容，已列出供你处理。\n之后检查将只显示此时间之后发布的内容。`)
+    } else {
+      // 今天没有新内容
+      alert(`「${res.sourceName}」初始化完成 ✅\n今日暂无新发布内容。\n之后检查将显示 ${new Date().toLocaleDateString('zh-CN')} 之后发布的所有新内容。`)
+    }
   } else if (res && res.items && res.items.length) {
     _feedItems = res.items
     renderFeedUpdates()
