@@ -554,7 +554,7 @@
         <div id="yt-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto"></div>
         <!-- 原始字幕折叠 -->
         <div style="margin-top:10px">
-          <span onclick="toggleYtCaption()" style="font-size:12px;color:#888780;cursor:pointer;user-select:none" id="yt-caption-toggle">▶ 查看原始字幕（前3000字）</span>
+          <span onclick="toggleYtCaption()" style="font-size:12px;color:#888780;cursor:pointer;user-select:none" id="yt-caption-toggle">▶ 查看原始字幕</span>
           <div id="yt-raw-caption" style="display:none;margin-top:8px;padding:12px;background:#fafaf8;border:1px solid #e0dfd8;border-radius:8px;font-size:12px;color:#888780;line-height:1.8;max-height:240px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
       </div>
@@ -1674,7 +1674,7 @@ function toggleYtCaption() {
   const btn = document.getElementById('yt-caption-toggle')
   const isHidden = box.style.display === 'none'
   box.style.display = isHidden ? 'block' : 'none'
-  btn.textContent = (isHidden ? '▼ ' : '▶ ') + '查看原始字幕（前3000字）'
+  btn.textContent = (isHidden ? '▼ ' : '▶ ') + '查看原始字幕'
 }
 
 async function doYoutubeToNote() {
@@ -1714,7 +1714,7 @@ async function doYoutubeToNote() {
     document.getElementById('yt-note-content').textContent = res.note
     document.getElementById('yt-raw-caption').textContent = res.rawCaption
     document.getElementById('yt-raw-caption').style.display = 'none'
-    document.getElementById('yt-caption-toggle').textContent = '▶ 查看原始字幕（前3000字）'
+    document.getElementById('yt-caption-toggle').textContent = '▶ 查看原始字幕'
     document.getElementById('yt-save-msg').style.display = 'none'
     resultEl.classList.remove('hidden')
 

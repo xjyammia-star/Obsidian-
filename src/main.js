@@ -1391,7 +1391,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
       author,
       duration,
       captionLang: usedVision ? 'AI视觉识别' : captionLang,
-      rawCaption: rawText.slice(0, 3000),
+      rawCaption: rawText,
       usedVision
     }
 
