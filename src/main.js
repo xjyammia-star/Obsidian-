@@ -567,7 +567,9 @@ ipcMain.handle('get-ai-settings', () => {
     reminderEnabled: false,
     reminderAdvance: 0,
     inboxFolder: '',
-    ytCookiesFile: ''
+    ytCookiesFile: '',
+    hubCustomEnabled: false,
+    hubFilenames: ''
   })
 })
 
