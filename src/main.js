@@ -494,6 +494,80 @@ ipcMain.handle('move-file', async (event, { srcPath, destDir }) => {
   } catch (err) { return { success: false, error: err.message } }
 })
 
+// ── 扫描缺少摘要的笔记 ──
+ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) => {
+  try {
+    const files = []
+    const walk = (dir) => {
+      for (const item of fs.readdirSync(dir)) {
+        if (item.startsWith('.') || item.endsWith('.icloud')) continue
+        const full = path.join(dir, item)
+        const stat = fs.lstatSync(full)
+        if (stat.isDirectory()) { walk(full); continue }
+        if (!item.endsWith('.md')) continue
+        // 读取 frontmatter，检查是否有 description 字段
+        const content = fs.readFileSync(full, 'utf-8')
+        const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+        if (fmMatch) {
+          const fm = fmMatch[1]
+          // 有 description 且不为空则跳过
+          const descMatch = fm.match(/^description\s*:\s*(.+)$/m)
+          if (descMatch && descMatch[1].trim() && descMatch[1].trim() !== '""' && descMatch[1].trim() !== "''") continue
+        }
+        // 文件内容太少（少于50字）跳过
+        const body = content.replace(/^---[\s\S]*?---\r?\n?/, '').trim()
+        if (body.length < 50) continue
+        files.push({
+          name: item,
+          path: full,
+          relativePath: path.relative(vaultPath, full)
+        })
+      }
+    }
+    walk(scanPath)
+    return { success: true, files }
+  } catch (err) { return { success: false, error: err.message } }
+})
+
+// ── 为单篇笔记写入 AI 摘要 ──
+ipcMain.handle('write-summary', async (event, { filePath }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先配置 API Key' }
+  }
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    const body = raw.replace(/^---[\s\S]*?---\r?\n?/, '').trim().slice(0, 3000)
+    if (!body) return { success: false, error: '文件内容为空' }
+
+    const fileName = path.basename(filePath, '.md')
+    const prompt = `请为以下笔记生成一句话摘要（30字以内，简洁概括核心内容，不要加引号）：\n\n文件名：${fileName}\n\n内容：\n${body}`
+    const reply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: prompt }], 200
+    )
+    const summary = reply.trim().replace(/^["'"]|["'"]$/g, '').slice(0, 100)
+    if (!summary) return { success: false, error: 'AI 返回空内容' }
+
+    // 写入 frontmatter
+    let newContent
+    if (raw.match(/^---\r?\n/)) {
+      // 已有 frontmatter：插入或替换 description 字段
+      newContent = raw.replace(/^(---\r?\n)([\s\S]*?)(\r?\n---)/,
+        (_, open, fm, close) => {
+          const cleaned = fm.replace(/^description\s*:.*$/m, '').replace(/\n+$/, '')
+          return `${open}${cleaned}\ndescription: "${summary}"${close}`
+        }
+      )
+    } else {
+      // 没有 frontmatter：在文件头加一个
+      newContent = `---\ndescription: "${summary}"\n---\n\n${raw}`
+    }
+    fs.writeFileSync(filePath, newContent, 'utf-8')
+    return { success: true, summary }
+  } catch (err) { return { success: false, error: err.message } }
+})
+
 // ── 标签统计（只读 frontmatter，不扫正文）──
 ipcMain.handle('get-tag-stats', async (event, vaultPath) => {
   try {

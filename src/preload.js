@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('api', {
   checkEmptyFiles:   (vaultPath) => ipcRenderer.invoke('check-empty-files', vaultPath),
   deleteFile:        (filePath)  => ipcRenderer.invoke('delete-file', filePath),
   moveFile:          (args)      => ipcRenderer.invoke('move-file', args),
+  scanMissingSummary:(args)      => ipcRenderer.invoke('scan-missing-summary', args),
+  writeSummary:      (args)      => ipcRenderer.invoke('write-summary', args),
   getTagStats:       (vaultPath) => ipcRenderer.invoke('get-tag-stats', vaultPath),
   searchByTag:       (args)      => ipcRenderer.invoke('search-by-tag', args),
   createNote:        (args)      => ipcRenderer.invoke('create-note', args),
