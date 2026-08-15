@@ -1849,7 +1849,7 @@ async function checkFeedByBrowser(feed, ses) {
     win.webContents.on('did-finish-load', async () => {
       clearTimeout(timeout)
       try {
-        await new Promise(r => setTimeout(r, 3000))
+        await new Promise(r => setTimeout(r, 5000))  // 等待 JS 动态渲染完成
         const platform = feed.platform
         const items = await win.webContents.executeJavaScript(`
           (function() {
