@@ -485,42 +485,51 @@
     </div>
     <div class="panel" style="grid-column:1/-1">
       <div class="section-title">🎬 YouTube 视频转笔记</div>
+      <p style="font-size:13px;color:#888780;line-height:1.6">粘贴 YouTube 视频链接，AI 自动获取字幕并生成结构化笔记。</p>
 
-      <!-- 第一行：链接输入 -->
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-        <input id="yt-url-input" type="text" placeholder="粘贴 YouTube 链接，例如 https://www.youtube.com/watch?v=xxxxx 或 https://youtu.be/xxxxx"
-          style="flex:1;padding:9px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;outline:none;font-family:inherit"
-          oninput="ytClearResult()" onkeydown="if(event.key==='Enter')doYoutubeToNote()">
-        <button class="btn-primary" onclick="doYoutubeToNote()" id="btn-yt-note" style="padding:9px 22px;white-space:nowrap">开始转换</button>
-      </div>
-
-      <!-- 第二行：说明 + 笔记要求 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;align-items:start">
-        <!-- 左：橙色说明 -->
-        <div style="padding:12px 14px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:1.9">
-          <div style="font-weight:600;font-size:13px;margin-bottom:5px">📋 使用说明</div>
-          <div>✅ 支持有字幕的视频（手动字幕或自动生成字幕）</div>
-          <div>🌐 优先使用中文字幕，否则使用英文字幕</div>
-          <div>⚠️ 需要能访问 YouTube 的网络环境</div>
-          <div>❌ 纯音乐、无字幕视频无法转换</div>
+      <!-- 第一行：左=链接输入框，右=说明提示 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;align-items:stretch">
+        <!-- 左：链接输入区 -->
+        <div style="border:2px dashed #d3d1c7;border-radius:10px;padding:22px 18px;background:#fafaf8;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+          <div style="font-size:30px">▶️</div>
+          <div style="font-size:13px;color:#5f5e5a;margin-top:8px;font-weight:500">粘贴 YouTube 链接</div>
+          <input id="yt-url-input" type="text" placeholder="https://www.youtube.com/watch?v=xxxxx"
+            style="width:100%;margin-top:12px;padding:8px 12px;border:1px solid #d3d1c7;border-radius:8px;font-size:12px;outline:none;font-family:inherit;box-sizing:border-box;text-align:left"
+            oninput="ytClearResult()" onkeydown="if(event.key==='Enter')doYoutubeToNote()">
+          <div style="font-size:11px;color:#b4b2a9;margin-top:6px">支持 youtube.com 和 youtu.be 短链接</div>
         </div>
-        <!-- 右：笔记要求输入 -->
-        <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-size:12px;color:#888780">自定义笔记要求（选填）</div>
-            <div style="display:flex;gap:5px;flex-wrap:wrap">
-              <span onclick="setYtPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📝 核心观点</span>
-              <span onclick="setYtPrompt('这是一段课程/讲座视频，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📚 课程笔记</span>
-              <span onclick="setYtPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">✏️ 仅整理格式</span>
-            </div>
+        <!-- 右：橙色说明 -->
+        <div style="padding:14px 16px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:2">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px">📋 使用说明</div>
+          <div>✅ 有字幕的视频（手动上传或自动生成）直接提取文字</div>
+          <div>🎬 无字幕的视频，AI 视觉识别画面中的硬字幕</div>
+          <div>🌐 优先使用中文字幕，其次英文字幕</div>
+          <div style="margin-top:6px;padding-top:6px;border-top:1px solid #fac775;color:#a07830">
+            ⚠️ 需要能正常访问 YouTube 的网络环境
           </div>
-          <textarea id="yt-prompt" rows="4" placeholder="例如：这是一段英语课程，请用中文整理笔记；或：重点提取其中的操作步骤..."
-            style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
         </div>
       </div>
 
-      <!-- 进度显示 -->
-      <div id="yt-progress" style="font-size:12px;color:#888780;margin-bottom:8px;min-height:18px"></div>
+      <!-- 第二行：自定义笔记要求（全宽） -->
+      <div style="margin-top:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:12px;color:#888780">自定义笔记要求（选填）</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span onclick="setYtPrompt('请用中文整理笔记，重点提取核心观点和行动建议')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📝 核心观点</span>
+            <span onclick="setYtPrompt('这是一段课程/讲座视频，请整理成学习笔记，包含重点概念、示例和总结')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📚 课程笔记</span>
+            <span onclick="setYtPrompt('这是一段会议视频，请整理成会议纪要，包含讨论要点、决策和待办事项')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">📋 会议纪要</span>
+            <span onclick="setYtPrompt('请完整保留所有内容，仅做格式整理和段落优化')" style="font-size:11px;color:#534ab7;background:#eeedfe;border-radius:4px;padding:2px 8px;cursor:pointer">✏️ 仅整理格式</span>
+          </div>
+        </div>
+        <textarea id="yt-prompt" rows="3" placeholder="例如：这是一段英语课程，请用中文整理笔记；或：重点提取其中的操作步骤..."
+          style="width:100%;padding:10px 14px;border:1px solid #d3d1c7;border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit;line-height:1.6;box-sizing:border-box"></textarea>
+      </div>
+
+      <!-- 第三行：按钮 + 进度 -->
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+        <button class="btn-primary" onclick="doYoutubeToNote()" id="btn-yt-note" style="padding:8px 24px">开始转换</button>
+        <div id="yt-progress" style="font-size:12px;color:#888780"></div>
+      </div>
 
       <!-- 结果区 -->
       <div id="yt-result" class="hidden">
