@@ -394,8 +394,8 @@
   <div style="margin-top:20px;border-top:1px solid #e8e6de;padding-top:20px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
       <div>
-        <div class="section-title" style="margin:0">✍️ 批量补写摘要</div>
-        <div style="font-size:12px;color:#888780;margin-top:4px">对知识库中没有摘要的笔记，由 AI 自动生成并写入 description 字段</div>
+        <div class="section-title" style="margin:0">✍️ 批量补写标签</div>
+        <div style="font-size:12px;color:#888780;margin-top:4px">扫描没有标签的笔记，由 AI 根据内容和所在文件夹自动推断标签并写入</div>
       </div>
     </div>
 
@@ -413,7 +413,7 @@
     </div>
 
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <button class="btn-sm" onclick="scanMissingSummary()" id="btn-scan-summary">🔍 扫描缺少摘要的笔记</button>
+      <button class="btn-sm" onclick="scanMissingSummary()" id="btn-scan-summary">🔍 扫描缺少标签的笔记</button>
       <span id="summary-scan-result" style="font-size:12px;color:#888780"></span>
     </div>
 
@@ -424,7 +424,7 @@
         <div style="display:flex;gap:6px">
           <button class="btn-sm" onclick="summarySelectAll(true)">全选</button>
           <button class="btn-sm" onclick="summarySelectAll(false)">取消</button>
-          <button class="btn-sm green" onclick="runBatchSummary()" id="btn-run-summary">✍️ 开始补写</button>
+          <button class="btn-sm green" onclick="runBatchSummary()" id="btn-run-summary">✍️ 开始补写标签</button>
         </div>
       </div>
       <div class="panel scrollable" id="summary-files-panel" style="max-height:220px"></div>
@@ -1461,18 +1461,18 @@ async function scanMissingSummary() {
 
   const res = await window.api.scanMissingSummary({ scanPath, vaultPath: currentVaultPath })
   btn.disabled = false
-  btn.textContent = '🔍 扫描缺少摘要的笔记'
+  btn.textContent = '🔍 扫描缺少标签的笔记'
 
   if (!res.success) { resultEl.textContent = '扫描失败：' + res.error; return }
   _summaryFiles = res.files
 
   if (!_summaryFiles.length) {
-    resultEl.textContent = '✅ 所有笔记都已有摘要！'
+    resultEl.textContent = '✅ 所有笔记都已有标签！'
     return
   }
 
-  resultEl.textContent = `发现 ${_summaryFiles.length} 篇笔记缺少摘要`
-  document.getElementById('summary-file-count').textContent = `共 ${_summaryFiles.length} 篇，勾选后点击「开始补写」`
+  resultEl.textContent = `发现 ${_summaryFiles.length} 篇笔记缺少标签`
+  document.getElementById('summary-file-count').textContent = `共 ${_summaryFiles.length} 篇，勾选后点击「开始补写标签」`
 
   const panel = document.getElementById('summary-files-panel')
   panel.innerHTML = _summaryFiles.map((f, i) =>
@@ -1525,7 +1525,7 @@ async function runBatchSummary() {
   doneMsg.style.display = 'block'
   doneMsg.style.background = failCount === 0 ? '#eaf3de' : '#fef9ee'
   doneMsg.style.color = failCount === 0 ? '#3b6d11' : '#7a5c08'
-  doneMsg.textContent = `✅ 成功补写 ${successCount} 篇${failCount > 0 ? `，${failCount} 篇失败` : ''}。摘要已写入各文件的 frontmatter description 字段。`
+  doneMsg.textContent = `✅ 成功补写 ${successCount} 篇${failCount > 0 ? `，${failCount} 篇失败` : ''}。标签已写入各文件的 frontmatter tags 字段。`
 
   // 重新扫描更新列表
   setTimeout(() => scanMissingSummary(), 1000)

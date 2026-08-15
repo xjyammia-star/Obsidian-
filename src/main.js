@@ -494,7 +494,7 @@ ipcMain.handle('move-file', async (event, { srcPath, destDir }) => {
   } catch (err) { return { success: false, error: err.message } }
 })
 
-// ── 扫描缺少摘要的笔记 ──
+// ── 扫描缺少标签的笔记 ──
 ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) => {
   try {
     const files = []
@@ -505,14 +505,20 @@ ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) =>
         const stat = fs.lstatSync(full)
         if (stat.isDirectory()) { walk(full); continue }
         if (!item.endsWith('.md')) continue
-        // 读取 frontmatter，检查是否有 description 字段
         const content = fs.readFileSync(full, 'utf-8')
+        // 检查是否有 tags 字段且不为空
         const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
         if (fmMatch) {
           const fm = fmMatch[1]
-          // 有 description 且不为空则跳过
-          const descMatch = fm.match(/^description\s*:\s*(.+)$/m)
-          if (descMatch && descMatch[1].trim() && descMatch[1].trim() !== '""' && descMatch[1].trim() !== "''") continue
+          const tagsMatch = fm.match(/^tags\s*:/m)
+          if (tagsMatch) {
+            // 有 tags 字段，检查是否有实际内容（不是空数组 []）
+            const tagsLine = fm.match(/^tags\s*:\s*(.+)$/m)
+            if (tagsLine && tagsLine[1].trim() !== '[]' && tagsLine[1].trim() !== '') continue
+            // 检查多行格式
+            const tagsBlock = fm.match(/^tags\s*:\s*\n((?:\s+-\s*.+\n?)+)/m)
+            if (tagsBlock) continue
+          }
         }
         // 文件内容太少（少于50字）跳过
         const body = content.replace(/^---[\s\S]*?---\r?\n?/, '').trim()
@@ -529,7 +535,7 @@ ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) =>
   } catch (err) { return { success: false, error: err.message } }
 })
 
-// ── 为单篇笔记写入 AI 摘要 ──
+// ── 为单篇笔记写入 AI 标签 ──
 ipcMain.handle('write-summary', async (event, { filePath }) => {
   const settings = store.get('aiSettings', {})
   if (!settings.apiKey || !settings.modelId) {
@@ -537,34 +543,44 @@ ipcMain.handle('write-summary', async (event, { filePath }) => {
   }
   try {
     const raw = fs.readFileSync(filePath, 'utf-8')
-    const body = raw.replace(/^---[\s\S]*?---\r?\n?/, '').trim().slice(0, 3000)
+    const body = raw.replace(/^---[\s\S]*?---\r?\n?/, '').trim().slice(0, 2000)
     if (!body) return { success: false, error: '文件内容为空' }
 
     const fileName = path.basename(filePath, '.md')
-    const prompt = `请为以下笔记生成一句话摘要（30字以内，简洁概括核心内容，不要加引号）：\n\n文件名：${fileName}\n\n内容：\n${body}`
+    const folderName = path.dirname(filePath).split(path.sep).pop()
+    const prompt = `你是知识库标签助手。请根据以下笔记内容，推断1到3个合适的中文标签（参考文件夹名称判断领域）。
+只输出标签，用英文逗号分隔，不要加[]或引号，不要解释。
+
+文件名：${fileName}
+所在文件夹：${folderName}
+内容摘录：
+${body}`
+
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
-      [{ role: 'user', content: prompt }], 200
+      [{ role: 'user', content: prompt }], 100
     )
-    const summary = reply.trim().replace(/^["'"]|["'"]$/g, '').slice(0, 100)
-    if (!summary) return { success: false, error: 'AI 返回空内容' }
+    const tagsStr = reply.trim().replace(/[\[\]"']/g, '').trim()
+    if (!tagsStr) return { success: false, error: 'AI 返回空内容' }
+    const tags = tagsStr.split(/[,，]/).map(t => t.trim()).filter(Boolean)
+    if (!tags.length) return { success: false, error: '未能解析出标签' }
+
+    const tagsYaml = '[' + tags.map(t => t).join(', ') + ']'
 
     // 写入 frontmatter
     let newContent
     if (raw.match(/^---\r?\n/)) {
-      // 已有 frontmatter：插入或替换 description 字段
       newContent = raw.replace(/^(---\r?\n)([\s\S]*?)(\r?\n---)/,
         (_, open, fm, close) => {
-          const cleaned = fm.replace(/^description\s*:.*$/m, '').replace(/\n+$/, '')
-          return `${open}${cleaned}\ndescription: "${summary}"${close}`
+          const cleaned = fm.replace(/^tags\s*:.*$/m, '').replace(/\n+$/, '')
+          return `${open}${cleaned}\ntags: ${tagsYaml}${close}`
         }
       )
     } else {
-      // 没有 frontmatter：在文件头加一个
-      newContent = `---\ndescription: "${summary}"\n---\n\n${raw}`
+      newContent = `---\ntags: ${tagsYaml}\n---\n\n${raw}`
     }
     fs.writeFileSync(filePath, newContent, 'utf-8')
-    return { success: true, summary }
+    return { success: true, tags }
   } catch (err) { return { success: false, error: err.message } }
 })
 
