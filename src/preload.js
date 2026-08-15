@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('api', {
   checkEmptyFiles:   (vaultPath) => ipcRenderer.invoke('check-empty-files', vaultPath),
   deleteFile:        (filePath)  => ipcRenderer.invoke('delete-file', filePath),
   moveFile:          (args)      => ipcRenderer.invoke('move-file', args),
+  hubBatchUpdate:    (vaultPath) => ipcRenderer.invoke('hub-batch-update', vaultPath),
+  hubUpdateFolder:   (args)      => ipcRenderer.invoke('hub-update-folder', args),
   scanMissingSummary:(args)      => ipcRenderer.invoke('scan-missing-summary', args),
   writeSummary:      (args)      => ipcRenderer.invoke('write-summary', args),
   feedGetAll:        ()          => ipcRenderer.invoke('feed-get-all'),

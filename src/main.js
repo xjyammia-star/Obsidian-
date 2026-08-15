@@ -473,7 +473,12 @@ ipcMain.handle('check-empty-files', async (event, vaultPath) => {
 // ── 删除文件（移到系统回收站）──
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
+    const folderPath = path.dirname(filePath)
     await shell.trashItem(filePath)
+    // 删除后触发 Hub 更新
+    const settings = store.get('aiSettings', {})
+    const vaultPath = store.get('vaultPath', '')
+    if (vaultPath) updateHubFile(folderPath, vaultPath, settings)
     return { success: true }
   } catch (err) { return { success: false, error: err.message } }
 })
@@ -491,9 +496,250 @@ ipcMain.handle('move-file', async (event, { srcPath, destDir }) => {
       destPath = path.join(destDir, `${base}_${ts}${ext}`)
     }
     fs.renameSync(srcPath, destPath)
+    // 移动后触发源文件夹和目标文件夹的 Hub 更新
+    const settings = store.get('aiSettings', {})
+    const vaultPath = store.get('vaultPath', '')
+    if (vaultPath) {
+      updateHubFile(path.dirname(srcPath), vaultPath, settings)
+      updateHubFile(destDir, vaultPath, settings)
+    }
     return { success: true, destPath }
   } catch (err) { return { success: false, error: err.message } }
 })
+// ══════════════════════════════════════════════
+// ── Hub 文件自动维护系统 ──
+// ══════════════════════════════════════════════
+
+// Hub 文件名候选列表（按优先级）
+const HUB_FILENAME_CANDIDATES = ['Hub.md', 'readme.md', 'README.md', 'index.md', 'MOC.md']
+
+// 判断某个路径是否是临时文件夹（inbox）
+function isTempFolder(folderPath, settings) {
+  const inboxFolder = settings.inboxFolder || ''
+  if (!inboxFolder) return false
+  const norm = p => p.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '')
+  return norm(folderPath) === norm(inboxFolder) ||
+         norm(folderPath).startsWith(norm(inboxFolder) + '/')
+}
+
+// 判断某个文件夹是否应该有 Hub（排除临时文件夹和根目录）
+function shouldHaveHub(folderPath, vaultPath, settings) {
+  const norm = p => p.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '')
+  // 排除根目录
+  if (norm(folderPath) === norm(vaultPath)) return false
+  // 排除临时文件夹
+  if (isTempFolder(folderPath, settings)) return false
+  // 排除 Templates 等常见系统文件夹
+  const folderName = path.basename(folderPath).toLowerCase()
+  if (['templates', 'attachments', '附件', 'assets', '.obsidian'].includes(folderName)) return false
+  return true
+}
+
+// 找到文件夹里的 Hub 文件，返回路径（不存在返回 null）
+function findExistingHubFile(folderPath, settings) {
+  // 先看用户自定义的 Hub 文件名
+  const customNames = (settings.hubFilenames || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+  const candidates = customNames.length
+    ? customNames
+    : HUB_FILENAME_CANDIDATES
+
+  for (const name of candidates) {
+    const p = path.join(folderPath, name)
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+// 找到或创建 Hub 文件
+function findOrCreateHubFile(folderPath, settings) {
+  const existing = findExistingHubFile(folderPath, settings)
+  if (existing) return existing
+
+  // 自动创建：用文件夹名生成 Hub 文件名
+  const folderName = path.basename(folderPath)
+  // 去掉前面的数字序号，如 "01 AI" -> "AI"
+  const cleanName = folderName.replace(/^\d+\s+/, '')
+  const hubFileName = cleanName + ' Hub.md'
+  const hubPath = path.join(folderPath, hubFileName)
+
+  // 创建初始内容
+  const initialContent = `---\ntags: [hub]\n---\n\n# 📁 ${cleanName}\n\n`
+  fs.writeFileSync(hubPath, initialContent, 'utf-8')
+  return hubPath
+}
+
+// 判断文件是否应该被 Hub 收录
+function shouldIncludeInHub(filePath, hubFilePath, settings) {
+  const fileName = path.basename(filePath)
+  const ext = path.extname(fileName).toLowerCase()
+
+  // 只收录 md 文件
+  if (ext !== '.md') return false
+
+  // 排除 Hub 文件本身
+  if (filePath === hubFilePath) return false
+
+  // 排除常见系统文件
+  const lname = fileName.toLowerCase()
+  if (['readme.md', 'index.md', 'moc.md'].includes(lname)) return false
+  if (lname.endsWith(' hub.md') || lname === 'hub.md') return false
+
+  // 排除空文件
+  try {
+    const stat = fs.lstatSync(filePath)
+    if (stat.size === 0) return false
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const body = content.replace(/^---[\s\S]*?---\r?\n?/, '').trim()
+    if (!body) return false
+  } catch (_) { return false }
+
+  return true
+}
+
+// 更新某个文件夹的 Hub 文件
+function updateHubFile(folderPath, vaultPath, settings) {
+  try {
+    if (!shouldHaveHub(folderPath, vaultPath, settings)) return { updated: false, reason: 'skip' }
+
+    const hubPath = findOrCreateHubFile(folderPath, settings)
+
+    // 扫描文件夹里的直接 md 文件（不含子文件夹）
+    let mdFiles = []
+    try {
+      mdFiles = fs.readdirSync(folderPath)
+        .filter(f => !f.startsWith('.') && !f.endsWith('.icloud'))
+        .map(f => path.join(folderPath, f))
+        .filter(f => {
+          try { return fs.lstatSync(f).isFile() } catch (_) { return false }
+        })
+        .filter(f => shouldIncludeInHub(f, hubPath, settings))
+    } catch (_) {}
+
+    // 读取当前 Hub 内容
+    let hubContent = ''
+    try { hubContent = fs.readFileSync(hubPath, 'utf-8') } catch (_) {}
+
+    // 提取 frontmatter 和正文
+    const fmMatch = hubContent.match(/^---[\s\S]*?---\r?\n?/)
+    const frontmatter = fmMatch ? fmMatch[0] : '---\ntags: [hub]\n---\n\n'
+    const bodyWithoutFm = fmMatch ? hubContent.slice(fmMatch[0].length) : hubContent
+
+    // 提取已有的 wikilinks
+    const existingLinks = new Set()
+    const wikilinkRegex = /\[\[([^\]|#]+?)(?:\|[^\]]*?)?\]\]/g
+    let m
+    while ((m = wikilinkRegex.exec(bodyWithoutFm)) !== null) {
+      existingLinks.add(m[1].trim())
+    }
+
+    // 找出需要新增的文件
+    const toAdd = mdFiles.filter(f => {
+      const nameWithoutExt = path.basename(f, '.md')
+      return !existingLinks.has(nameWithoutExt) && !existingLinks.has(path.basename(f))
+    })
+
+    // 找出需要移除的链接（文件已不存在）
+    const toRemove = new Set()
+    existingLinks.forEach(linkName => {
+      const withExt = path.join(folderPath, linkName + '.md')
+      const withoutExt = path.join(folderPath, linkName)
+      if (!fs.existsSync(withExt) && !fs.existsSync(withoutExt)) {
+        toRemove.add(linkName)
+      }
+    })
+
+    if (toAdd.length === 0 && toRemove.size === 0) return { updated: false, reason: 'no-change' }
+
+    // 处理正文：移除失效链接
+    let newBody = bodyWithoutFm
+    if (toRemove.size > 0) {
+      toRemove.forEach(linkName => {
+        // 移除整行包含该 wikilink 的行
+        const escaped = linkName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        newBody = newBody.replace(new RegExp(`^[\\s\\-*]*\\[\\[${escaped}[\\]|].*$\\n?`, 'gm'), '')
+      })
+      // 清理多余空行
+      newBody = newBody.replace(/\n{3,}/g, '\n\n')
+    }
+
+    // 添加新链接：找到「## 最近添加」章节，没有就创建
+    if (toAdd.length > 0) {
+      const newLinks = toAdd.map(f => `* [[${path.basename(f, '.md')}]]`).join('\n')
+      const recentSection = '\n\n## 最近添加\n'
+      if (newBody.includes('## 最近添加')) {
+        // 在「最近添加」章节末尾插入
+        newBody = newBody.replace(/(## 最近添加\n)([\s\S]*?)(\n##|$)/, (match, header, content, next) => {
+          return header + content.trimEnd() + '\n' + newLinks + '\n' + next
+        })
+      } else {
+        // 追加「最近添加」章节
+        newBody = newBody.trimEnd() + recentSection + newLinks + '\n'
+      }
+    }
+
+    // 写回文件
+    fs.writeFileSync(hubPath, frontmatter + newBody, 'utf-8')
+    return { updated: true, added: toAdd.length, removed: toRemove.size, hubPath }
+
+  } catch (err) {
+    return { updated: false, error: err.message }
+  }
+}
+
+// 根据文件路径触发对应文件夹的 Hub 更新
+function triggerHubUpdate(filePath, vaultPath, settings) {
+  try {
+    const folderPath = path.dirname(filePath)
+    return updateHubFile(folderPath, vaultPath, settings)
+  } catch (_) { return { updated: false } }
+}
+
+// 批量补全：扫描整个知识库所有应有 Hub 的文件夹
+function batchUpdateAllHubs(vaultPath, settings) {
+  const results = []
+  const walk = (dir) => {
+    try {
+      for (const item of fs.readdirSync(dir)) {
+        if (item.startsWith('.') || item.endsWith('.icloud')) continue
+        const full = path.join(dir, item)
+        try {
+          if (fs.lstatSync(full).isDirectory()) {
+            if (shouldHaveHub(full, vaultPath, settings)) {
+              const res = updateHubFile(full, vaultPath, settings)
+              if (res.updated || res.error) results.push({ folder: item, ...res })
+            }
+            walk(full)
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+  walk(vaultPath)
+  return results
+}
+
+// ── IPC Handlers ──
+
+// 批量补全 Hub
+ipcMain.handle('hub-batch-update', async (event, vaultPath) => {
+  const settings = store.get('aiSettings', {})
+  try {
+    const results = batchUpdateAllHubs(vaultPath, settings)
+    const updated = results.filter(r => r.updated)
+    return { success: true, updatedCount: updated.length, results }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// 单文件夹 Hub 更新（供内部调用）
+ipcMain.handle('hub-update-folder', async (event, { folderPath, vaultPath }) => {
+  const settings = store.get('aiSettings', {})
+  const res = updateHubFile(folderPath, vaultPath, settings)
+  return res
+})
+
 
 // ── 扫描缺少标签的笔记 ──
 ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) => {
@@ -879,6 +1125,13 @@ ipcMain.handle('ai-import-files', async (event, { files, vaultPath, vaultFolders
     }
   }))
 
+  // 导入完成后，触发所有涉及文件夹的 Hub 更新
+  const hubSettings = store.get('aiSettings', {})
+  const affectedDirs = new Set(results.filter(r => r.success).map(r => r.targetDir).filter(Boolean))
+  affectedDirs.forEach(dir => {
+    try { updateHubFile(dir, vaultPath, hubSettings) } catch (_) {}
+  })
+
   return results
 })
 
@@ -925,6 +1178,9 @@ ipcMain.handle('create-note', async (event, { vaultPath, targetDir, title, templ
     const filePath = path.join(targetDir || vaultPath, fileName)
     if (fs.existsSync(filePath)) return { success: false, error: '同名文件已存在' }
     fs.writeFileSync(filePath, content, 'utf-8')
+    // 保存笔记后触发 Hub 更新
+    const noteSettings = store.get('aiSettings', {})
+    try { updateHubFile(targetDir || vaultPath, vaultPath, noteSettings) } catch (_) {}
     return { success: true, path: filePath }
   } catch (err) { return { success: false, error: err.message } }
 })

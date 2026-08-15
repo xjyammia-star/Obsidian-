@@ -452,6 +452,24 @@
     <!-- 补写结果 -->
     <div id="summary-done-msg" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
   </div>
+
+  <!-- 批量补全 Hub 文件 -->
+  <div style="margin-top:20px;border-top:1px solid #e8e6de;padding-top:20px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div class="section-title" style="margin:0">📌 批量补全 Hub 文件</div>
+        <div style="font-size:12px;color:#888780;margin-top:4px">扫描知识库所有文件夹，自动创建或更新 Hub 导航文件，确保所有笔记都已被链接</div>
+      </div>
+    </div>
+    <div style="padding:12px 14px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:1.8;margin-bottom:12px">
+      <b>什么是 Hub 文件？</b><br>
+      Hub 文件是每个文件夹的知识导航索引，记录该文件夹内所有笔记的链接，方便在 Obsidian 中快速导航。工具会在文件导入、移动、删除时自动维护 Hub 文件，你也可以手动触发全库补全。
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-sm green" onclick="runHubBatchUpdate()" id="btn-hub-update">📌 开始补全 Hub</button>
+      <span id="hub-update-result" style="font-size:12px;color:#888780"></span>
+    </div>
+  </div>
 </div>
 
 <!-- 笔记工具页 -->
@@ -1202,7 +1220,15 @@ async function ffDeleteSelected() {
     const row = cb.closest('.folder-file-item')
     return row ? row.querySelector('.ff-name').textContent : '未知文件'
   })
-  const confirmed = confirm(`确定要删除以下 ${checked.length} 个文件吗？\n（文件将移入系统回收站，可恢复）\n\n${names.slice(0,10).join('\n')}${names.length > 10 ? `\n…以及另外 ${names.length - 10} 个文件` : ''}`)
+
+  // 检查是否包含 Hub 文件
+  const hubNames = names.filter(n => n.toLowerCase().includes('hub') || n.toLowerCase() === 'readme.md' || n.toLowerCase() === 'index.md')
+  let confirmMsg = `确定要删除以下 ${checked.length} 个文件吗？\n（文件将移入系统回收站，可恢复）\n\n${names.slice(0,10).join('\n')}${names.length > 10 ? `\n…以及另外 ${names.length - 10} 个文件` : ''}`
+  if (hubNames.length > 0) {
+    confirmMsg = `⚠️ 注意：你选中的文件中包含 Hub 文件：\n${hubNames.join('\n')}\n\nHub 文件是由系统自动生成和维护的知识导航文件，删除后该文件夹的导航索引将丢失，不建议删除。\n\n` + confirmMsg
+  }
+
+  const confirmed = confirm(confirmMsg)
   if (!confirmed) return
   const paths = [...checked].map(cb => decodeURIComponent(cb.getAttribute('data-path')))
   let successCount = 0, failNames = []
@@ -1715,6 +1741,32 @@ async function runBatchSummary() {
 
   // 重新扫描更新列表
   setTimeout(() => scanMissingSummary(), 1000)
+}
+
+async function runHubBatchUpdate() {
+  if (!currentVaultPath) { alert('请先选择知识库路径'); return }
+  const btn = document.getElementById('btn-hub-update')
+  const resultEl = document.getElementById('hub-update-result')
+  btn.disabled = true
+  btn.textContent = '⏳ 补全中...'
+  resultEl.textContent = ''
+
+  const res = await window.api.hubBatchUpdate(currentVaultPath)
+  btn.disabled = false
+  btn.textContent = '📌 开始补全 Hub'
+
+  if (res && res.success) {
+    if (res.updatedCount > 0) {
+      resultEl.textContent = `✅ 已更新 ${res.updatedCount} 个文件夹的 Hub 文件`
+      resultEl.style.color = '#0f6e56'
+    } else {
+      resultEl.textContent = '✅ 所有 Hub 文件均已是最新，无需更新'
+      resultEl.style.color = '#888780'
+    }
+  } else {
+    resultEl.textContent = '❌ 更新失败：' + (res?.error || '未知错误')
+    resultEl.style.color = '#a32d2d'
+  }
 }
 
 async function loadInboxFiles() {
