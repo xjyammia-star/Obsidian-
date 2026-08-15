@@ -2410,12 +2410,24 @@ async function checkAllFeeds() {
   btn.textContent = '🔄 检查全部更新'
   progressEl.style.display = 'none'
 
+  if (res && res.firstCheckNames && res.firstCheckNames.length) {
+    const msg = `已完成初始化：${res.firstCheckNames.join('、')}\n✅ 当前内容已记录为已读，下次检查将只显示新发布的内容。`
+    if (res.items && res.items.length) {
+      alert(msg)
+    } else {
+      alert(msg)
+      renderFeedList()
+      return
+    }
+  }
+
   if (res && res.items && res.items.length) {
     _feedItems = res.items
     renderFeedUpdates()
     renderFeedList()
   } else {
-    alert('没有新内容，或所有订阅均已是最新')
+    renderFeedList()
+    alert('没有新内容，所有订阅均已是最新')
   }
 }
 
@@ -2428,13 +2440,17 @@ async function checkOneFeed(index) {
   const res = await window.api.feedCheckOne(index)
   progressEl.style.display = 'none'
 
-  if (res && res.items && res.items.length) {
+  if (res && res.isFirstCheck) {
+    renderFeedList()
+    alert(`「${res.sourceName}」初始化完成 ✅\n当前内容已记录为已读，下次检查将只显示新发布的内容。`)
+  } else if (res && res.items && res.items.length) {
     _feedItems = res.items
     renderFeedUpdates()
     renderFeedList()
   } else if (res && res.error) {
     alert('检查失败：' + res.error)
   } else {
+    renderFeedList()
     alert('没有新内容')
   }
 }

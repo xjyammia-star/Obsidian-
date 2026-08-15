@@ -1834,13 +1834,24 @@ ipcMain.handle('feed-check-one', async (event, index) => {
   const feed = feeds[index]
   if (!feed) return { success: false, error: '订阅不存在' }
   try {
-    let items = await doCheckFeed(feed)
-    items = items.filter(it => !(feed.seenIds || []).includes(it.id))
-    items = items.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
-    feeds[index].seenIds = [...(feed.seenIds || []), ...items.map(it => it.id)].slice(-200)
+    let allItems = await doCheckFeed(feed)
+    const isFirstCheck = !feed.lastCheck  // 从未检查过
+
+    if (isFirstCheck) {
+      // 第一次检查：只记录当前内容为已读，不返回任何条目
+      feeds[index].seenIds = allItems.map(it => it.id).slice(-200)
+      feeds[index].lastCheck = new Date().toISOString()
+      saveFeedStore(feeds)
+      return { success: true, items: [], isFirstCheck: true, sourceName: feed.name }
+    }
+
+    // 后续检查：只返回未读内容
+    let newItems = allItems.filter(it => !(feed.seenIds || []).includes(it.id))
+    newItems = newItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
+    feeds[index].seenIds = [...(feed.seenIds || []), ...newItems.map(it => it.id)].slice(-200)
     feeds[index].lastCheck = new Date().toISOString()
     saveFeedStore(feeds)
-    return { success: true, items }
+    return { success: true, items: newItems }
   } catch (err) {
     return { success: false, error: err.message }
   }
@@ -1849,16 +1860,27 @@ ipcMain.handle('feed-check-one', async (event, index) => {
 ipcMain.handle('feed-check-all', async (event) => {
   const feeds = getFeedStore()
   const allItems = []
+  const firstCheckNames = []
   for (let i = 0; i < feeds.length; i++) {
     try {
-      let items = await doCheckFeed(feeds[i])
-      items = items.filter(it => !(feeds[i].seenIds || []).includes(it.id))
-      items = items.map(it => ({ ...it, platform: feeds[i].platform, sourceName: feeds[i].name }))
-      feeds[i].seenIds = [...(feeds[i].seenIds || []), ...items.map(it => it.id)].slice(-200)
-      feeds[i].lastCheck = new Date().toISOString()
-      allItems.push(...items)
+      const feed = feeds[i]
+      let items = await doCheckFeed(feed)
+      const isFirstCheck = !feed.lastCheck
+
+      if (isFirstCheck) {
+        // 第一次：只记录已读，不列出
+        feeds[i].seenIds = items.map(it => it.id).slice(-200)
+        feeds[i].lastCheck = new Date().toISOString()
+        firstCheckNames.push(feed.name)
+      } else {
+        let newItems = items.filter(it => !(feed.seenIds || []).includes(it.id))
+        newItems = newItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
+        feeds[i].seenIds = [...(feed.seenIds || []), ...newItems.map(it => it.id)].slice(-200)
+        feeds[i].lastCheck = new Date().toISOString()
+        allItems.push(...newItems)
+      }
     } catch (_) {}
   }
   saveFeedStore(feeds)
-  return { success: true, items: allItems }
+  return { success: true, items: allItems, firstCheckNames }
 })
