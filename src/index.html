@@ -552,9 +552,9 @@
       <div id="ai-sub-title" style="font-size:15px;font-weight:500;color:#2c2c2a"></div>
     </div>
     <!-- 各子功能内容区 -->
-    <div id="ai-sub-content" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div id="ai-panel-analyze" style="display:none;grid-column:1/-1">
-<div class="panel" style="grid-column:1/-1">
+    <div id="ai-sub-content">
+      <div id="ai-panel-analyze" style="display:none">
+<div class="panel">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div class="section-title" style="margin:0">📁 知识库内容分析</div>
         <span style="font-size:12px;color:#888780" id="ai-analyze-file-count"></span>
@@ -606,8 +606,8 @@
         <div id="analyze-save-result" class="import-result hidden" style="margin-top:8px"></div>
       </div>
       </div>
-      <div id="ai-panel-youtube" style="display:none;grid-column:1/-1">
-    <div class="panel" style="grid-column:1/-1">
+      <div id="ai-panel-youtube" style="display:none">
+    <div class="panel">
       <div class="section-title">🎬 YouTube 视频转笔记</div>
       <p style="font-size:13px;color:#888780;line-height:1.6">粘贴 YouTube 视频链接，AI 自动获取字幕并生成结构化笔记。</p>
 
@@ -689,8 +689,8 @@
         </div>
       </div>
       </div>
-      <div id="ai-panel-audio" style="display:none;grid-column:1/-1">
-    <div class="panel" style="grid-column:1/-1">
+      <div id="ai-panel-audio" style="display:none">
+    <div class="panel">
       <div class="section-title">🎙️ 本地视频/音频转笔记</div>
       <p style="font-size:13px;color:#888780;line-height:1.6">选择本地视频或音频文件，AI 自动识别语音并生成结构化笔记（需在设置中配置「音频模型 ID」）。</p>
 
@@ -758,8 +758,8 @@
         <div id="audio-note-content" style="width:100%;background:#f5f4f0;border:1px solid #e0dfd8;border-radius:8px;padding:16px 20px;font-size:13px;line-height:1.9;white-space:pre-wrap;box-sizing:border-box"></div>
       </div>
       </div>
-      <div id="ai-panel-web" style="display:none;grid-column:1/-1">
-    <div class="panel" style="grid-column:1/-1">
+      <div id="ai-panel-web" style="display:none">
+    <div class="panel">
       <div class="section-title">🌐 网页内容转笔记</div>
       <p style="font-size:13px;color:#888780;line-height:1.6">粘贴网页链接，AI 自动提取正文并整理成结构化笔记。</p>
 
@@ -1945,7 +1945,7 @@ function showAiSub(name) {
   // 切换面板显示
   ;['analyze','youtube','audio','web'].forEach(n => {
     const el = document.getElementById('ai-panel-'+n)
-    if (el) el.style.display = n === name ? 'contents' : 'none'
+    if (el) el.style.display = n === name ? 'block' : 'none'
   })
   // 触发初始化
   if (name === 'analyze') loadAnalyzeFolders()
