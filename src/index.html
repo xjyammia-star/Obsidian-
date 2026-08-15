@@ -410,6 +410,15 @@
         指定文件夹
       </label>
       <select id="summary-folder-select" style="display:none;padding:5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none;min-width:200px"></select>
+      <!-- 自定义层级文件夹选择器 -->
+      <div id="summary-folder-picker" style="display:none;position:relative;min-width:260px">
+        <div id="summary-folder-btn" onclick="toggleSummaryFolderDropdown()"
+          style="padding:5px 32px 5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative">
+          选择文件夹
+          <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#888780">▼</span>
+        </div>
+        <div id="summary-folder-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d3d1c7;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;z-index:999;margin-top:2px"></div>
+      </div>
     </div>
 
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
@@ -1421,24 +1430,46 @@ let _summaryFiles = []
 
 function toggleSummaryScope() {
   const isFolder = document.getElementById('scope-folder').checked
-  const sel = document.getElementById('summary-folder-select')
-  sel.style.display = isFolder ? 'inline-block' : 'none'
-  if (isFolder && sel.options.length === 0) {
+  document.getElementById('summary-folder-picker').style.display = isFolder ? 'block' : 'none'
+  if (isFolder && !document.getElementById('summary-folder-dropdown').innerHTML) {
     loadSummaryFolderList()
   }
-  // 重置扫描结果
   document.getElementById('summary-file-list').classList.add('hidden')
   document.getElementById('summary-scan-result').textContent = ''
   _summaryFiles = []
+  _summarySelectedFolder = null
+}
+
+let _summarySelectedFolder = null
+
+function toggleSummaryFolderDropdown() {
+  const dd = document.getElementById('summary-folder-dropdown')
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none'
 }
 
 async function loadSummaryFolderList() {
-  const sel = document.getElementById('summary-folder-select')
+  const dd = document.getElementById('summary-folder-dropdown')
   const res = await window.api.getVaultFolders(currentVaultPath)
   if (!res || !res.folders) return
-  sel.innerHTML = res.folders.map(f =>
-    `<option value="${encodeURIComponent(f.value)}">${f.label}</option>`
-  ).join('')
+  dd.innerHTML = res.folders.map(f => {
+    const rel = f.label || '根目录'
+    const folderPath = f.value
+    const depth = rel === '（根目录）' ? 0 : rel.split('/').length
+    const indent = depth * 16
+    const name = rel === '（根目录）' ? '（根目录）' : rel.split('/').pop()
+    const ep = encodeURIComponent(folderPath)
+    return `<div onclick="selectSummaryFolder('${ep}','${name}')"
+      style="padding:8px 14px;padding-left:${14+indent}px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0efe8;display:flex;align-items:center;gap:6px;transition:background 0.1s"
+      onmouseover="this.style.background='#f5f4f0'" onmouseout="this.style.background=''">
+      <span style="font-size:14px;opacity:0.7">📁</span><span>${name}</span>
+    </div>`
+  }).join('')
+}
+
+function selectSummaryFolder(ep, name) {
+  _summarySelectedFolder = decodeURIComponent(ep)
+  document.getElementById('summary-folder-btn').childNodes[0].textContent = name + ' '
+  document.getElementById('summary-folder-dropdown').style.display = 'none'
 }
 
 async function scanMissingSummary() {
@@ -1455,8 +1486,8 @@ async function scanMissingSummary() {
   const isFolder = document.getElementById('scope-folder').checked
   let scanPath = currentVaultPath
   if (isFolder) {
-    const sel = document.getElementById('summary-folder-select')
-    if (sel.value) scanPath = decodeURIComponent(sel.value)
+    if (!_summarySelectedFolder) { alert('请先选择要扫描的文件夹'); btn.disabled = false; btn.textContent = '🔍 扫描缺少标签的笔记'; return }
+    scanPath = _summarySelectedFolder
   }
 
   const res = await window.api.scanMissingSummary({ scanPath, vaultPath: currentVaultPath })
