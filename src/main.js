@@ -1674,7 +1674,7 @@ ${rawText.slice(0, 10000)}`
 })
 
 // ── 订阅追踪 ──
-const { BrowserWindow: SubBrowserWindow } = require('electron')
+const { BrowserWindow: SubBrowserWindow, session } = require('electron')
 
 function getFeedStore() { return store.get('feeds', []) }
 function saveFeedStore(feeds) { store.set('feeds', feeds) }
