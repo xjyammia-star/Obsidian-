@@ -1681,6 +1681,13 @@ function saveFeedStore(feeds) { store.set('feeds', feeds) }
 
 ipcMain.handle('feed-get-all', () => getFeedStore())
 
+ipcMain.handle('feed-mark-platform-logged-in', (event, platform) => {
+  const feeds = getFeedStore()
+  feeds.forEach((f, i) => { if (f.platform === platform) feeds[i].loggedIn = true })
+  saveFeedStore(feeds)
+  return { success: true }
+})
+
 ipcMain.handle('feed-add', (event, { platform, name, url }) => {
   const feeds = getFeedStore()
   feeds.push({ platform, name, url, lastCheck: null, seenIds: [] })
@@ -1748,9 +1755,10 @@ ipcMain.handle('feed-open-login', async (event, index) => {
     loginWin.webContents.on('did-navigate', async () => {
       const loggedIn = await checkPlatformLogin(feed.platform, ses)
       if (loggedIn) {
-        // 登录成功，更新存储
+        // 登录成功，更新整个平台所有订阅的登录状态
         const feeds2 = getFeedStore()
-        feeds2[index].loggedIn = true
+        const plat = feeds2[index]?.platform
+        feeds2.forEach((f, i) => { if (f.platform === plat) feeds2[i].loggedIn = true })
         saveFeedStore(feeds2)
         // 通知渲染进程
         try { event.sender.send('feed-login-success', index) } catch (_) {}
@@ -1765,7 +1773,7 @@ ipcMain.handle('feed-open-login', async (event, index) => {
       const loggedIn = await checkPlatformLogin(feed.platform, ses)
       if (loggedIn) {
         const feeds2 = getFeedStore()
-        feeds2[index].loggedIn = true
+        feeds2.forEach((f, i) => { if (f.platform === feed.platform) feeds2[i].loggedIn = true })
         saveFeedStore(feeds2)
         try { event.sender.send('feed-login-success', index) } catch (_) {}
         resolve({ success: true, loggedIn: true })

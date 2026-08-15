@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   scanMissingSummary:(args)      => ipcRenderer.invoke('scan-missing-summary', args),
   writeSummary:      (args)      => ipcRenderer.invoke('write-summary', args),
   feedGetAll:        ()          => ipcRenderer.invoke('feed-get-all'),
+  feedMarkPlatformLoggedIn: (platform) => ipcRenderer.invoke('feed-mark-platform-logged-in', platform),
   feedAdd:           (args)      => ipcRenderer.invoke('feed-add', args),
   feedDelete:        (index)     => ipcRenderer.invoke('feed-delete', index),
   feedOpenLogin:     (index)     => ipcRenderer.invoke('feed-open-login', index),
