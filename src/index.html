@@ -554,8 +554,14 @@
         <div id="yt-note-content" style="background:#f5f4f0;border-radius:8px;padding:16px;font-size:13px;line-height:1.9;white-space:pre-wrap;max-height:480px;overflow-y:auto"></div>
         <!-- 原始字幕折叠 -->
         <div style="margin-top:10px">
-          <span onclick="toggleYtCaption()" style="font-size:12px;color:#888780;cursor:pointer;user-select:none" id="yt-caption-toggle">▶ 查看原始字幕</span>
-          <div id="yt-raw-caption" style="display:none;margin-top:8px;padding:12px;background:#fafaf8;border:1px solid #e0dfd8;border-radius:8px;font-size:12px;color:#888780;line-height:1.8;max-height:240px;overflow-y:auto;white-space:pre-wrap"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span onclick="toggleYtCaption()" style="font-size:12px;color:#888780;cursor:pointer;user-select:none" id="yt-caption-toggle">▶ 查看原始字幕</span>
+            <div id="yt-caption-actions" style="display:none;gap:6px;align-items:center">
+              <button class="btn-sm" onclick="copyYtCaption()">📋 复制字幕</button>
+              <button class="btn-sm green" onclick="saveYtCaption()">💾 保存字幕为笔记</button>
+            </div>
+          </div>
+          <div id="yt-raw-caption" style="display:none;margin-top:8px;padding:12px;background:#fafaf8;border:1px solid #e0dfd8;border-radius:8px;font-size:12px;color:#888780;line-height:1.8;max-height:320px;overflow-y:auto;white-space:pre-wrap"></div>
         </div>
       </div>
     </div>
@@ -1672,9 +1678,53 @@ function setYtPrompt(text) {
 function toggleYtCaption() {
   const box = document.getElementById('yt-raw-caption')
   const btn = document.getElementById('yt-caption-toggle')
+  const actions = document.getElementById('yt-caption-actions')
   const isHidden = box.style.display === 'none'
   box.style.display = isHidden ? 'block' : 'none'
+  actions.style.display = isHidden ? 'flex' : 'none'
   btn.textContent = (isHidden ? '▼ ' : '▶ ') + '查看原始字幕'
+}
+
+function copyYtCaption() {
+  if (!_ytNoteResult) return
+  navigator.clipboard.writeText(_ytNoteResult.rawCaption).then(() => {
+    const btn = event.target
+    btn.textContent = '✅ 已复制'
+    setTimeout(() => { btn.textContent = '📋 复制字幕' }, 2000)
+  })
+}
+
+async function saveYtCaption() {
+  if (!_ytNoteResult) return
+  const settings = await window.api.getAiSettings()
+  const inboxPath = settings.inboxFolder || currentInboxPath || null
+  if (!inboxPath) { alert('请先在设置中配置「待处理文件库路径」'); return }
+
+  const safeTitle = (_ytNoteResult.videoTitle || 'YouTube字幕').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
+  const now = new Date()
+  const dateStr = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+
+  const body = `---\ntitle: "${_ytNoteResult.videoTitle}"\nauthor: "${_ytNoteResult.author}"\nduration: "${_ytNoteResult.duration}"\nsource: "${document.getElementById('yt-url-input').value.trim()}"\ndate: "${dateStr}"\ntags: []\n---\n\n# 原始字幕\n\n${_ytNoteResult.rawCaption}`
+
+  const res = await window.api.createNote({
+    vaultPath: currentVaultPath,
+    targetDir: inboxPath,
+    title: 'YT_字幕_' + safeTitle + '_' + dateStr,
+    template: 'blank',
+    body
+  })
+  const msgEl = document.getElementById('yt-save-msg')
+  msgEl.style.display = 'block'
+  if (res.success) {
+    msgEl.style.background = '#eaf3de'
+    msgEl.style.color = '#3b6d11'
+    msgEl.textContent = '✅ 字幕已保存到：' + res.path
+  } else {
+    msgEl.style.background = '#fcebeb'
+    msgEl.style.color = '#a32d2d'
+    msgEl.textContent = '❌ 保存失败：' + res.error
+  }
 }
 
 async function doYoutubeToNote() {
