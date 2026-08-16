@@ -392,84 +392,7 @@
     <div class="panel scrollable" id="import-results-list" style="max-height:180px"></div>
   </div>
 
-  <!-- 批量补写摘要 -->
-  <div style="margin-top:20px;border-top:1px solid #e8e6de;padding-top:20px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
-      <div>
-        <div class="section-title" style="margin:0">✍️ 批量补写标签</div>
-        <div style="font-size:12px;color:#888780;margin-top:4px">扫描没有标签的笔记，由 AI 根据内容和所在文件夹自动推断标签并写入</div>
-      </div>
-    </div>
 
-    <!-- 范围选择 -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-        <input type="radio" name="summary-scope" value="all" id="scope-all" checked onchange="toggleSummaryScope()" style="accent-color:#534ab7">
-        扫描整个知识库
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-        <input type="radio" name="summary-scope" value="folder" id="scope-folder" onchange="toggleSummaryScope()" style="accent-color:#534ab7">
-        指定文件夹
-      </label>
-      <select id="summary-folder-select" style="display:none;padding:5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none;min-width:200px"></select>
-      <!-- 自定义层级文件夹选择器 -->
-      <div id="summary-folder-picker" style="display:none;position:relative;min-width:260px">
-        <div id="summary-folder-btn" onclick="toggleSummaryFolderDropdown()"
-          style="padding:5px 32px 5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative">
-          选择文件夹
-          <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#888780">▼</span>
-        </div>
-        <div id="summary-folder-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d3d1c7;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;z-index:999;margin-top:2px"></div>
-      </div>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <button class="btn-sm" onclick="scanMissingSummary()" id="btn-scan-summary">🔍 扫描缺少标签的笔记</button>
-      <span id="summary-scan-result" style="font-size:12px;color:#888780"></span>
-    </div>
-
-    <!-- 扫描结果列表 -->
-    <div id="summary-file-list" class="hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:12px;color:#888780" id="summary-file-count"></div>
-        <div style="display:flex;gap:6px">
-          <button class="btn-sm" onclick="summarySelectAll(true)">全选</button>
-          <button class="btn-sm" onclick="summarySelectAll(false)">取消</button>
-          <button class="btn-sm green" onclick="runBatchSummary()" id="btn-run-summary">✍️ 开始补写标签</button>
-        </div>
-      </div>
-      <div class="panel scrollable" id="summary-files-panel" style="max-height:220px"></div>
-    </div>
-
-    <!-- 补写进度 -->
-    <div id="summary-progress" style="display:none;margin-top:10px">
-      <div style="font-size:12px;color:#534ab7;margin-bottom:6px" id="summary-progress-text">准备中...</div>
-      <div style="background:#e8e6de;border-radius:4px;height:6px;overflow:hidden">
-        <div id="summary-progress-bar" style="height:100%;background:#534ab7;transition:width 0.3s;width:0%"></div>
-      </div>
-    </div>
-
-    <!-- 补写结果 -->
-    <div id="summary-done-msg" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
-  </div>
-
-  <!-- 批量补全 Hub 文件 -->
-  <div style="margin-top:20px;border-top:1px solid #e8e6de;padding-top:20px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
-      <div>
-        <div class="section-title" style="margin:0">📌 批量补全 Hub 文件</div>
-        <div style="font-size:12px;color:#888780;margin-top:4px">扫描知识库所有文件夹，自动创建或更新 Hub 导航文件，确保所有笔记都已被链接</div>
-      </div>
-    </div>
-    <div style="padding:12px 14px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:1.8;margin-bottom:12px">
-      <b>什么是 Hub 文件？</b><br>
-      Hub 文件是每个文件夹的知识导航索引，记录该文件夹内所有笔记的链接，方便在 Obsidian 中快速导航。工具会在文件导入、移动、删除时自动维护 Hub 文件，你也可以手动触发全库补全。
-    </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button class="btn-sm green" onclick="runHubBatchUpdate()" id="btn-hub-update">📌 开始补全 Hub</button>
-      <span id="hub-update-result" style="font-size:12px;color:#888780"></span>
-    </div>
-  </div>
 </div>
 
 <!-- 笔记工具页 -->
@@ -495,7 +418,76 @@
       </div>
       <div class="panel scrollable" id="empty-result"><div class="empty-tip">点击「开始检测」找出知识库中的空文件</div></div>
     </div>
+  
+  <!-- 批量补写标签 -->
+  <div style="grid-column:1/-1;border-top:1px solid #e8e6de;padding-top:20px;margin-top:4px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div class="section-title" style="margin:0">✍️ 批量补写标签</div>
+        <div style="font-size:12px;color:#888780;margin-top:3px">扫描没有标签的笔记，AI 根据内容和所在文件夹自动推断标签并写入</div>
+      </div>
+    </div>
+    <!-- 范围选择 -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="radio" name="summary-scope" value="all" id="scope-all" checked onchange="toggleSummaryScope()" style="accent-color:#534ab7">
+        扫描整个知识库
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="radio" name="summary-scope" value="folder" id="scope-folder" onchange="toggleSummaryScope()" style="accent-color:#534ab7">
+        指定文件夹
+      </label>
+      <select id="summary-folder-select" style="display:none;padding:5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;outline:none;min-width:200px"></select>
+      <div id="summary-folder-picker" style="display:none;position:relative;min-width:260px">
+        <div id="summary-folder-btn" onclick="toggleSummaryFolderDropdown()"
+          style="padding:5px 32px 5px 10px;border:1px solid #d3d1c7;border-radius:6px;font-size:13px;cursor:pointer;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative">
+          选择文件夹
+          <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#888780">▼</span>
+        </div>
+        <div id="summary-folder-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d3d1c7;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:280px;overflow-y:auto;z-index:999;margin-top:2px"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button class="btn-sm" onclick="scanMissingSummary()" id="btn-scan-summary">🔍 扫描缺少标签的笔记</button>
+      <span id="summary-scan-result" style="font-size:12px;color:#888780"></span>
+    </div>
+    <div id="summary-file-list" class="hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:12px;color:#888780" id="summary-file-count"></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm" onclick="summarySelectAll(true)">全选</button>
+          <button class="btn-sm" onclick="summarySelectAll(false)">取消</button>
+          <button class="btn-sm green" onclick="runBatchSummary()" id="btn-run-summary">✍️ 开始补写标签</button>
+        </div>
+      </div>
+      <div class="panel scrollable" id="summary-files-panel" style="max-height:220px"></div>
+    </div>
+    <div id="summary-progress" style="display:none;margin-top:10px">
+      <div style="font-size:12px;color:#534ab7;margin-bottom:6px" id="summary-progress-text">准备中...</div>
+      <div style="background:#e8e6de;border-radius:4px;height:6px;overflow:hidden">
+        <div id="summary-progress-bar" style="height:100%;background:#534ab7;transition:width 0.3s;width:0%"></div>
+      </div>
+    </div>
+    <div id="summary-done-msg" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px"></div>
   </div>
+
+  <!-- 批量补全 Hub 文件 -->
+  <div style="grid-column:1/-1;border-top:1px solid #e8e6de;padding-top:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div class="section-title" style="margin:0">📌 批量补全 Hub 文件</div>
+        <div style="font-size:12px;color:#888780;margin-top:3px">扫描知识库所有文件夹，自动创建或更新 Hub 导航文件，确保所有笔记都已被链接</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn-sm green" onclick="runHubBatchUpdate()" id="btn-hub-update">📌 开始补全 Hub</button>
+        <span id="hub-update-result" style="font-size:12px;color:#888780"></span>
+      </div>
+    </div>
+    <div style="padding:12px 14px;background:#fef9ee;border:1px solid #fac775;border-radius:10px;font-size:12px;color:#7a5c08;line-height:1.8">
+      <b>什么是 Hub 文件？</b>　Hub 文件是每个文件夹的知识导航索引，记录该文件夹内所有笔记的链接，方便在 Obsidian 中快速导航。工具会在文件导入、移动、删除时自动维护，也可手动触发全库补全。
+    </div>
+  </div>
+</div>
 </div>
 
 <!-- 新建笔记页 -->
