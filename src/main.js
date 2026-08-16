@@ -733,11 +733,98 @@ ipcMain.handle('hub-batch-update', async (event, vaultPath) => {
   }
 })
 
-// 单文件夹 Hub 更新（供内部调用）
-ipcMain.handle('hub-update-folder', async (event, { folderPath, vaultPath }) => {
+// 扫描 Hub 状态（只扫描，不修改）
+ipcMain.handle('hub-scan', async (event, vaultPath) => {
   const settings = store.get('aiSettings', {})
-  const res = updateHubFile(folderPath, vaultPath, settings)
-  return res
+  try {
+    const items = []
+    const walk = (dir) => {
+      try {
+        for (const item of fs.readdirSync(dir)) {
+          if (item.startsWith('.') || item.endsWith('.icloud')) continue
+          const full = path.join(dir, item)
+          try {
+            if (!fs.lstatSync(full).isDirectory()) continue
+            if (!shouldHaveHub(full, vaultPath, settings)) continue
+            const hubPath = findExistingHubFile(full, settings)
+            // 扫描文件夹里的 md 文件
+            let mdFiles = []
+            try {
+              mdFiles = fs.readdirSync(full)
+                .filter(f => !f.startsWith('.') && !f.endsWith('.icloud'))
+                .map(f => path.join(full, f))
+                .filter(f => { try { return fs.lstatSync(f).isFile() } catch (_) { return false } })
+                .filter(f => hubPath ? shouldIncludeInHub(f, hubPath, settings) : path.extname(f).toLowerCase() === '.md')
+            } catch (_) {}
+
+            if (!hubPath) {
+              // 没有 Hub 文件，需要创建
+              if (mdFiles.length > 0) {
+                items.push({
+                  folderPath: full,
+                  folderName: path.basename(full),
+                  relativePath: path.relative(vaultPath, full),
+                  status: 'create',
+                  statusLabel: '需要创建',
+                  mdCount: mdFiles.length
+                })
+              }
+            } else {
+              // 有 Hub 文件，检查是否需要更新
+              const hubContent = fs.readFileSync(hubPath, 'utf-8')
+              const existingLinks = new Set()
+              const re = /\[\[([^\]|#]+?)(?:\|[^\]]*?)?\]\]/g
+              let m
+              while ((m = re.exec(hubContent)) !== null) existingLinks.add(m[1].trim())
+              const toAdd = mdFiles.filter(f => {
+                const n = path.basename(f, '.md')
+                return !existingLinks.has(n) && !existingLinks.has(path.basename(f))
+              })
+              const toRemove = []
+              existingLinks.forEach(linkName => {
+                const p1 = path.join(full, linkName + '.md')
+                const p2 = path.join(full, linkName)
+                if (!fs.existsSync(p1) && !fs.existsSync(p2)) toRemove.push(linkName)
+              })
+              if (toAdd.length > 0 || toRemove.length > 0) {
+                items.push({
+                  folderPath: full,
+                  folderName: path.basename(full),
+                  relativePath: path.relative(vaultPath, full),
+                  status: 'update',
+                  statusLabel: '需要更新',
+                  addCount: toAdd.length,
+                  removeCount: toRemove.length,
+                  hubPath
+                })
+              }
+            }
+            walk(full)
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    walk(vaultPath)
+    return { success: true, items }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// 对选中的文件夹执行 Hub 更新
+ipcMain.handle('hub-update-selected', async (event, { folderPaths, vaultPath }) => {
+  const settings = store.get('aiSettings', {})
+  const results = []
+  for (const folderPath of folderPaths) {
+    try {
+      const res = updateHubFile(folderPath, vaultPath, settings)
+      results.push({ folderPath, folderName: path.basename(folderPath), ...res })
+    } catch (err) {
+      results.push({ folderPath, folderName: path.basename(folderPath), updated: false, error: err.message })
+    }
+  }
+  const updatedCount = results.filter(r => r.updated).length
+  return { success: true, updatedCount, results }
 })
 
 

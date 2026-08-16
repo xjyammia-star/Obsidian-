@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteFile:        (filePath)  => ipcRenderer.invoke('delete-file', filePath),
   moveFile:          (args)      => ipcRenderer.invoke('move-file', args),
   hubBatchUpdate:    (vaultPath) => ipcRenderer.invoke('hub-batch-update', vaultPath),
+  hubScan:           (vaultPath) => ipcRenderer.invoke('hub-scan', vaultPath),
+  hubUpdateSelected: (args)      => ipcRenderer.invoke('hub-update-selected', args),
   hubUpdateFolder:   (args)      => ipcRenderer.invoke('hub-update-folder', args),
   scanMissingSummary:(args)      => ipcRenderer.invoke('scan-missing-summary', args),
   writeSummary:      (args)      => ipcRenderer.invoke('write-summary', args),

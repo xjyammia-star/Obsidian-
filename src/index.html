@@ -473,7 +473,7 @@
         <div class="section-title" style="margin:0">📌 批量补全 Hub 文件</div>
         <div style="font-size:12px;color:#888780;margin-top:3px">扫描知识库所有文件夹，自动创建或更新 Hub 导航文件，确保所有笔记都已被链接</div>
       </div>
-      <button class="btn-sm green" onclick="runHubBatchUpdate()" id="btn-hub-update">📌 扫描并补全</button>
+      <button class="btn-sm" onclick="runHubBatchUpdate()" id="btn-hub-update">🔍 扫描</button>
     </div>
     <div class="panel scrollable" id="hub-result-panel" style="min-height:80px">
       <div class="empty-tip" id="hub-empty-tip">点击「扫描并补全」检查所有文件夹的 Hub 文件状态</div>
@@ -1734,47 +1734,99 @@ async function runBatchSummary() {
   setTimeout(() => scanMissingSummary(), 1000)
 }
 
+let _hubScanItems = []
+
 async function runHubBatchUpdate() {
   if (!currentVaultPath) { alert('请先选择知识库路径'); return }
   const btn = document.getElementById('btn-hub-update')
   const listEl = document.getElementById('hub-result-list')
   const emptyTip = document.getElementById('hub-empty-tip')
+
+  // 第一步：扫描
   btn.disabled = true
   btn.textContent = '⏳ 扫描中...'
   listEl.style.display = 'none'
   if (emptyTip) emptyTip.style.display = 'none'
+  _hubScanItems = []
 
-  const res = await window.api.hubBatchUpdate(currentVaultPath)
+  const res = await window.api.hubScan(currentVaultPath)
   btn.disabled = false
-  btn.textContent = '📌 扫描并补全'
+  btn.textContent = '🔍 扫描'
 
   if (!res || !res.success) {
     listEl.style.display = 'block'
-    listEl.innerHTML = `<div style="color:#a32d2d;padding:8px;font-size:13px">❌ 更新失败：${res?.error || '未知错误'}</div>`
+    listEl.innerHTML = `<div style="color:#a32d2d;padding:8px;font-size:13px">❌ 扫描失败：${res?.error || '未知错误'}</div>`
     return
   }
 
-  const updated = (res.results || []).filter(r => r.updated)
-  const noChange = (res.results || []).filter(r => !r.updated && !r.error)
+  _hubScanItems = res.items || []
 
-  if (updated.length === 0) {
+  if (_hubScanItems.length === 0) {
     listEl.style.display = 'block'
-    listEl.innerHTML = '<div style="color:#0f6e56;padding:8px;font-size:13px">✅ 所有 Hub 文件均已是最新，无需更新</div>'
+    listEl.innerHTML = '<div style="color:#0f6e56;padding:10px;font-size:13px">✅ 所有文件夹的 Hub 文件均已是最新，无需更新</div>'
     return
   }
 
+  // 显示扫描结果，让用户勾选
   listEl.style.display = 'block'
   listEl.innerHTML = `
-    <div style="font-size:12px;color:#534ab7;margin-bottom:8px;padding:0 4px">已更新 ${updated.length} 个文件夹的 Hub 文件：</div>
-    ${updated.map(r => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #f1efe8;font-size:13px">
-        <span style="color:#0f6e56;flex-shrink:0">📌</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.folder}</span>
-        <span style="font-size:11px;color:#888780;white-space:nowrap">
-          ${r.added ? `+${r.added} 条` : ''}${r.removed ? ` -${r.removed} 条` : ''}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px;margin-bottom:4px">
+      <span style="font-size:12px;color:#888780">发现 ${_hubScanItems.length} 个文件夹需要处理，勾选后点击「执行补全」</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" onclick="hubSelectAll(true)">全选</button>
+        <button class="btn-sm" onclick="hubSelectAll(false)">取消</button>
+        <button class="btn-sm green" onclick="doHubUpdate()">📌 执行补全</button>
+      </div>
+    </div>
+    ${_hubScanItems.map((item, i) => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-top:1px solid #f1efe8;font-size:13px">
+        <input type="checkbox" class="hub-cb" data-index="${i}" checked style="width:15px;height:15px;accent-color:#534ab7;flex-shrink:0">
+        <span style="font-size:14px">${item.status === 'create' ? '🆕' : '📝'}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.relativePath}">${item.folderName}</span>
+        <span style="font-size:11px;color:#b4b2a9;flex-shrink:0">${item.relativePath}</span>
+        <span style="font-size:11px;padding:1px 8px;border-radius:4px;white-space:nowrap;
+          background:${item.status === 'create' ? '#eeedfe' : '#fef9ee'};
+          color:${item.status === 'create' ? '#534ab7' : '#7a5c08'}">
+          ${item.status === 'create' ? `创建 Hub（${item.mdCount} 个文件）` : `更新（+${item.addCount || 0} -${item.removeCount || 0}）`}
         </span>
       </div>`).join('')}
   `
+}
+
+function hubSelectAll(checked) {
+  document.querySelectorAll('.hub-cb').forEach(cb => { cb.checked = checked })
+}
+
+async function doHubUpdate() {
+  const checked = [...document.querySelectorAll('.hub-cb:checked')]
+  if (!checked.length) { alert('请先勾选要处理的文件夹'); return }
+
+  const folderPaths = checked.map(cb => _hubScanItems[parseInt(cb.dataset.index)].folderPath)
+  const listEl = document.getElementById('hub-result-list')
+
+  listEl.innerHTML = '<div style="padding:10px;font-size:13px;color:#534ab7">⏳ 正在执行补全...</div>'
+
+  const res = await window.api.hubUpdateSelected({ folderPaths, vaultPath: currentVaultPath })
+
+  if (!res || !res.success) {
+    listEl.innerHTML = `<div style="color:#a32d2d;padding:8px;font-size:13px">❌ 执行失败：${res?.error || '未知错误'}</div>`
+    return
+  }
+
+  const updated = res.results.filter(r => r.updated)
+  const failed = res.results.filter(r => !r.updated && r.error)
+
+  listEl.innerHTML = `
+    <div style="color:#0f6e56;padding:8px;font-size:13px;font-weight:500">✅ 已完成 ${updated.length} 个文件夹的 Hub 补全</div>
+    ${updated.map(r => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-top:1px solid #f1efe8;font-size:13px">
+        <span style="color:#0f6e56">📌</span>
+        <span style="flex:1">${r.folderName}</span>
+        <span style="font-size:11px;color:#888780">${r.added ? `+${r.added} 条` : ''}${r.removed ? ` -${r.removed} 条` : ''} ${r.added === 0 && r.removed === 0 ? '（已创建）' : ''}</span>
+      </div>`).join('')}
+    ${failed.length ? `<div style="color:#a32d2d;padding:6px 8px;font-size:12px">失败：${failed.map(r => r.folderName).join('、')}</div>` : ''}
+  `
+  _hubScanItems = []
 }
 
 async function loadInboxFiles() {
