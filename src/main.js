@@ -472,15 +472,47 @@ ipcMain.handle('check-empty-files', async (event, vaultPath) => {
 
 // ── 删除文件（移到系统回收站）──
 ipcMain.handle('delete-file', async (event, filePath) => {
+  const folderPath = path.dirname(filePath)
+  let deleted = false
+
+  // 第一次尝试：Electron shell.trashItem
   try {
-    const folderPath = path.dirname(filePath)
     await shell.trashItem(filePath)
-    // 删除后触发 Hub 更新
+    deleted = true
+  } catch (_) {}
+
+  // 第二次尝试：Windows PowerShell（对 Unicode 路径更友好）
+  if (!deleted && isWin) {
+    try {
+      const { execSync } = require('child_process')
+      // 用 PowerShell 把文件移入回收站
+      const escaped = filePath.replace(/'/g, "''")
+      execSync(
+        `powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`,
+        { timeout: 10000 }
+      )
+      deleted = true
+    } catch (_) {}
+  }
+
+  // 第三次尝试：直接删除（不进回收站，最后兜底）
+  if (!deleted) {
+    try {
+      fs.unlinkSync(filePath)
+      deleted = true
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  }
+
+  // 删除后触发 Hub 更新
+  try {
     const settings = store.get('aiSettings', {})
     const vaultPath = store.get('vaultPath', '')
     if (vaultPath) updateHubFile(folderPath, vaultPath, settings)
-    return { success: true }
-  } catch (err) { return { success: false, error: err.message } }
+  } catch (_) {}
+
+  return { success: true }
 })
 
 // ── 移动文件到指定文件夹 ──
@@ -1080,15 +1112,10 @@ ipcMain.handle('ai-classify-file', async (event, { filePath, vaultPath, vaultFol
     } catch (_) {}
   }
 
-  // PDF 提取文字（只处理文字版，加超时保护）
+  // PDF 提取文字
   if (isPdf) {
-    try {
-      const { execSync } = require('child_process')
-      const text = execSync(`pdftotext "${filePath}" - 2>/dev/null`, { timeout: 5000 }).toString().slice(0, 1500)
-      if (text.trim()) contentForAI += `\nPDF内容（前1500字）：\n${text}`
-    } catch (_) {
-      // pdftotext 不存在或超时，只用文件名判断
-    }
+    const pdfText = await extractPdfText(filePath, 1500)
+    if (pdfText) contentForAI += `\nPDF内容（前1500字）：\n${pdfText}`
   }
 
   // 构建知识库文件夹列表
@@ -1158,11 +1185,8 @@ ipcMain.handle('ai-import-files', async (event, { files, vaultPath, vaultFolders
               const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 1500)
               contentForAI += `\n正文内容：\n${body}`
             } else if (ext === '.pdf') {
-              try {
-                const { execSync } = require('child_process')
-                const text = execSync(`pdftotext "${srcPath}" - 2>/dev/null`, { timeout: 5000 }).toString().slice(0, 1500)
-                if (text.trim()) contentForAI += `\nPDF内容：\n${text}`
-              } catch (_) {}
+              const pdfText = await extractPdfText(srcPath, 1500)
+              if (pdfText) contentForAI += `\nPDF内容：\n${pdfText}`
             }
             const folderList = vaultFolders.map(f => f.label).filter(l => l !== '（根目录）').join('、')
             const prompt = `你是知识库分类助手。知识库文件夹：${folderList}\n根据以下文件信息判断：1.存放文件夹（输出相对路径如"01 AI/Claude"）2.标签（中文逗号分隔）3.md文件无标题则建议标题（20字内）\n文件信息：${contentForAI}\n只输出JSON：{"folder":"xxx","tags":"xxx","title":"xxx"}`
@@ -1452,10 +1476,17 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
     event.sender.send('audio-note-progress', { step: 'organize', msg: '正在生成结构化笔记...' })
     const noteModelId = settings.modelId || audioModelId
     const noteEndpoint = endpoint
+    // 判断转录内容语言
+    const transcriptChineseChars = (transcript.match(/[\u4e00-\u9fff]/g) || []).length
+    const audioIsChinese = transcriptChineseChars / transcript.length > 0.1
+    const audioLangInstruction = audioIsChinese
+      ? '转录内容为中文，请直接用中文整理笔记。'
+      : '转录内容为非中文，请将笔记整理为中文。笔记末尾用「---」分隔，标题为「原始转录文本」，附上完整转录内容。'
+
     const basePrompt = customPrompt && customPrompt.trim()
       ? customPrompt.trim()
       : '请整理成结构化笔记，包含：核心主题、主要内容摘要、关键要点列表。'
-    const organizePrompt = '以下是一段音频/视频（文件名：' + fileName + '）的完整转录内容：\n\n' + transcript + '\n\n请根据以下要求生成笔记：\n' + basePrompt + '\n\n请用 Markdown 格式输出，笔记结构如下：\n1. 上半部分：AI 整理的结构化笔记（标题、摘要、关键要点）\n2. 下半部分：用 --- 分隔，标题为「原始转录文本」，附上完整转录内容。'
+    const organizePrompt = '以下是一段音频/视频（文件名：' + fileName + '）的完整转录内容：\n\n' + transcript + '\n\n语言要求：' + audioLangInstruction + '\n\n请根据以下要求生成笔记：\n' + basePrompt + (audioIsChinese ? '\n\n请用 Markdown 格式输出，笔记结构如下：\n1. 上半部分：AI 整理的结构化笔记\n2. 下半部分：用 --- 分隔，标题为「原始转录文本」，附上完整转录内容。' : '')
     const organizedNote = await callVolcanoAI(settings.apiKey, noteModelId, noteEndpoint, [{ role: 'user', content: organizePrompt }], 4000)
 
     event.sender.send('audio-note-progress', { step: 'done', msg: '完成！' })
@@ -1630,6 +1661,18 @@ ipcMain.handle('select-cookies-file', async () => {
 const { execFile, execSync } = require('child_process')
 const os = require('os')
 const isWin = process.platform === 'win32'
+
+// ── PDF 文字提取（使用 pdf-parse，纯 Node.js，无需外部工具）──
+async function extractPdfText(filePath, maxChars) {
+  try {
+    const pdfParse = require('pdf-parse')
+    const buffer = fs.readFileSync(filePath)
+    const data = await pdfParse(buffer)
+    return (data.text || '').slice(0, maxChars || 1500).trim()
+  } catch (_) {
+    return ''
+  }
+}
 
 function getYtDlpPath() {
   // 优先用项目目录下的 yt-dlp（Windows 用 .exe，Mac/Linux 不带后缀）
@@ -1836,16 +1879,19 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
     }
 
     // 6. 调 DeepSeek 整理笔记
-    const langNote = (captionLang === 'zh' || usedVision) ? '内容语言：中文' : ('内容语言：' + captionLang + '，请用中文输出笔记')
+    const isChinese = captionLang === 'zh' || usedVision
     const notePrompt = (userPrompt && userPrompt.trim()) ? userPrompt.trim() : '请整理成结构清晰的笔记，包含：核心主题、主要观点、重要细节、总结'
     const sourceNote = usedVision ? '（以下内容由 AI 视觉识别视频画面字幕获得）' : ''
+    const langInstruction = isChinese
+      ? '原文为中文，请直接用中文整理笔记。'
+      : '原文为非中文内容，请将笔记整理为中文，笔记末尾用「---」分隔后附上原文字幕内容。'
 
-    const userMsg = '以下是 YouTube 视频的字幕内容' + sourceNote + '，请帮我整理成笔记。\n\n视频信息：\n- 标题：' + videoTitle + '\n- 作者：' + author + '\n- 时长：' + duration + '\n- ' + langNote + '\n\n笔记要求：' + notePrompt + '\n\n字幕内容（前8000字）：\n' + rawText.slice(0, 8000)
+    const userMsg = '以下是 YouTube 视频的字幕内容' + sourceNote + '，请帮我整理成笔记。\n\n视频信息：\n- 标题：' + videoTitle + '\n- 作者：' + author + '\n- 时长：' + duration + '\n\n语言要求：' + langInstruction + '\n\n笔记要求：' + notePrompt + '\n\n字幕内容（前8000字）：\n' + rawText.slice(0, 8000)
 
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [
-        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容。' },
+        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容，输出结构清晰的 Markdown 笔记。若原文非中文，笔记主体必须为中文，并在末尾附上原文。' },
         { role: 'user', content: userMsg }
       ],
       4000
@@ -1995,7 +2041,14 @@ ipcMain.handle('webpage-to-note', async (event, { pageUrl, userPrompt, pasteCont
       }
     }
 
-    // 3. 调 DeepSeek 整理笔记
+    // 3. 判断原文语言
+    const chineseChars = (rawText.match(/[\u4e00-\u9fff]/g) || []).length
+    const webIsChinese = chineseChars / rawText.length > 0.1
+    const webLangInstruction = webIsChinese
+      ? '原文为中文，请直接用中文整理笔记。'
+      : '原文为非中文内容，请将笔记整理为中文，笔记末尾用「---」分隔后附上原文原始内容（前3000字）。'
+
+    // 4. 调 DeepSeek 整理笔记
     sendProgress('AI 正在整理笔记...')
     const notePrompt = (userPrompt && userPrompt.trim())
       ? userPrompt.trim()
@@ -2004,6 +2057,7 @@ ipcMain.handle('webpage-to-note', async (event, { pageUrl, userPrompt, pasteCont
     const userMsg = `以下是网页「${title}」的正文内容，请帮我整理成笔记。
 
 网页链接：${cleanUrl}
+语言要求：${webLangInstruction}
 笔记要求：${notePrompt}
 
 正文内容（前10000字）：
@@ -2012,7 +2066,7 @@ ${rawText.slice(0, 10000)}`
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [
-        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从网页文章中提炼有价值的内容，输出结构清晰的 Markdown 笔记。' },
+        { role: 'system', content: '你是一个专业的笔记整理助手，擅长从网页文章中提炼有价值的内容，输出结构清晰的 Markdown 笔记。若原文非中文，笔记主体必须为中文，并在末尾附上原文。' },
         { role: 'user', content: userMsg }
       ],
       4000
@@ -2028,6 +2082,133 @@ ${rawText.slice(0, 10000)}`
     }
   } catch (err) {
     return { success: false, error: err.message }
+  }
+})
+
+// ── AI 智能保存笔记（识别内容、匹配文件夹、生成文件名和标签）──
+ipcMain.handle('ai-smart-save-note', async (event, { content, vaultPath, vaultFolders, inboxFolder, inboxPath, sourceType, sourceTitle }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+
+  // 构建文件夹列表供 AI 选择
+  const folderList = (vaultFolders || [])
+    .map(f => f.label)
+    .filter(l => l && l !== '（根目录）')
+    .join('、')
+
+  // 取内容摘要（前3000字供 AI 判断）
+  const contentSnippet = (content || '').slice(0, 3000)
+
+  const prompt = `你是一个知识库笔记整理助手。
+知识库现有文件夹：${folderList || '（暂无文件夹）'}
+笔记来源类型：${sourceType || '未知'}
+笔记原始标题：${sourceTitle || '未知'}
+
+请根据以下笔记内容，判断并输出：
+1. filename：适合的文件名（不含扩展名，不超过40字，不能含 \\ / : * ? " < > | 等特殊字符）
+   文件名语言规则：
+   - 若原文内容主要为中文 → 文件名用中文
+   - 若原文内容主要为英文 → 文件名可用英文
+   - 若原文内容为其他语言（如泰文、日文、韩文等）→ 文件名必须翻译为中文
+2. tags：适合的标签（用英文逗号分隔，中文，2~4个）
+3. folder：最匹配的文件夹相对路径（必须从上面「知识库现有文件夹」列表中选择，如果没有合适的文件夹则输出空字符串 ""）
+
+笔记内容（前3000字）：
+${contentSnippet}
+
+请严格按以下 JSON 格式回复，不要加任何其他文字：
+{"filename":"xxx","tags":"xxx,xxx","folder":"xxx"}`
+
+  let aiResult = null
+  try {
+    const reply = await callVolcanoAI(
+      settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: prompt }],
+      500
+    )
+    const clean = reply.replace(/```json|```/g, '').trim()
+    aiResult = JSON.parse(clean)
+  } catch (err) {
+    // AI 失败则用兜底逻辑
+    aiResult = { filename: '', tags: '', folder: '' }
+  }
+
+  const filename = (aiResult.filename || '').replace(/[\\/:*?"<>|]/g, '_').trim() ||
+    (sourceTitle || '未命名笔记').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)
+  const tags = aiResult.tags || ''
+  const aiFolder = (aiResult.folder || '').trim()
+
+  // 确定目标文件夹
+  let targetDir = null
+  let usedInbox = false
+  let noMatch = false
+
+  if (aiFolder) {
+    // AI 给出了文件夹，找到对应的绝对路径
+    const matched = (vaultFolders || []).find(f =>
+      f.label && f.label.replace(/\\/g, '/') === aiFolder.replace(/\\/g, '/')
+    )
+    if (matched && matched.value) {
+      targetDir = matched.value
+    }
+  }
+
+  if (!targetDir) {
+    // 没有匹配文件夹，存临时文件夹
+    noMatch = true
+    if (inboxFolder) {
+      targetDir = inboxFolder
+      usedInbox = true
+    } else if (inboxPath) {
+      targetDir = inboxPath
+      usedInbox = true
+    } else {
+      return { success: false, error: '没有匹配的文件夹，且未设置临时文件夹和待处理文件库，请先在系统设置中配置。' }
+    }
+  }
+
+  // 确保目标文件夹存在
+  try {
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
+  } catch (e) {
+    return { success: false, error: '目标文件夹创建失败：' + e.message }
+  }
+
+  // 生成带 frontmatter 的完整笔记内容
+  const now = new Date()
+  const dateStr = now.toISOString().slice(0, 10)
+  const tagArr = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []
+  const tagYaml = tagArr.length ? '[' + tagArr.join(', ') + ']' : '[]'
+  const fullContent = `---\ntitle: "${filename}"\ndate: "${dateStr}"\ntags: ${tagYaml}\n---\n\n${content}`
+
+  // 写入文件（如有同名则自动加序号）
+  let filePath = path.join(targetDir, filename + '.md')
+  if (fs.existsSync(filePath)) {
+    let i = 2
+    while (fs.existsSync(path.join(targetDir, `${filename}_${i}.md`))) i++
+    filePath = path.join(targetDir, `${filename}_${i}.md`)
+  }
+
+  try {
+    fs.writeFileSync(filePath, fullContent, 'utf-8')
+  } catch (e) {
+    return { success: false, error: '文件写入失败：' + e.message }
+  }
+
+  // 触发 Hub 更新
+  try { updateHubFile(targetDir, vaultPath, settings) } catch (_) {}
+
+  return {
+    success: true,
+    path: filePath,
+    filename,
+    tags,
+    folder: aiFolder,
+    targetDir,
+    noMatch,
+    usedInbox
   }
 })
 
@@ -2049,17 +2230,10 @@ ipcMain.handle('process-feed-caption', async (event, { text, platform, sourceNam
     const prompt = needTranslate
       ? `以下是来自 ${platformName}「${sourceName}」发布的${typeLabel}的配文内容（发布于${date}）。
 
-请按以下格式整理：
-1. 用中文写一段简洁的笔记摘要，概括主要内容和关键信息
-2. 如有具体数据、人名、地点等重要信息请保留
-3. 最后附上原文
+请按以下格式整理（笔记主体必须为中文）：
 
-配文原文：
-${text}
-
-输出格式：
 ## 📝 内容摘要（中文）
-[你的中文摘要]
+[用中文写一段简洁的笔记摘要，概括主要内容和关键信息]
 
 ## 📌 关键信息
 [重要的人名、地点、数据等，如无则省略此节]
@@ -2075,12 +2249,23 @@ ${text}
 ${text}`
       : `以下是来自 ${platformName}「${sourceName}」发布的${typeLabel}的配文内容（发布于${date}）。
 
-请整理成简洁的笔记，包含：内容摘要、关键信息，并注明来源。
+请按以下格式整理成笔记：
 
-配文内容：
-${text}
+## 📝 内容摘要
+[简洁概括主要内容和关键信息]
 
-来源信息：平台 ${platformName}，账号 ${sourceName}，日期 ${date}，链接 ${url || '无'}`
+## 📌 关键信息
+[重要的人名、地点、数据等，如无则省略此节]
+
+## 🔗 来源
+平台：${platformName}
+账号：${sourceName}
+日期：${date}
+链接：${url || '无'}
+
+---
+## 原文
+${text}`
 
     const reply = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,

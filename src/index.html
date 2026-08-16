@@ -2291,6 +2291,79 @@ function copyAnalyzeResult() {
     .catch(() => alert('复制失败，请手动复制'))
 }
 
+/* ── 通用：AI 智能保存笔记 ──
+   content      笔记正文（已整理好的 Markdown）
+   sourceType   来源类型描述，如 'YouTube视频' / '网页' / '音频/视频' / '订阅内容'
+   sourceTitle  原始标题
+   msgEl        用于显示保存结果的 DOM 元素（可选，传 null 时不更新 UI）
+   onDone(res)  保存完成后的回调（可选）
+*/
+async function smartSaveNote(content, sourceType, sourceTitle, msgEl, onDone) {
+  if (!currentVaultPath) { alert('请先在知识库概览页选择知识库路径'); return }
+  const settings = await window.api.getAiSettings()
+  const inboxFolder = settings.inboxFolder || null
+  const inboxPath   = currentInboxPath || null
+
+  // 获取知识库文件夹列表
+  const foldersRes = await window.api.getVaultFolders(currentVaultPath)
+  const vaultFolders = (foldersRes && foldersRes.folders) ? foldersRes.folders : []
+
+  if (msgEl) {
+    msgEl.style.display = 'block'
+    msgEl.style.background = '#f5f4f0'
+    msgEl.style.color = '#888780'
+    msgEl.textContent = 'AI 正在识别内容，匹配文件夹...'
+  }
+
+  let res
+  try {
+    res = await window.api.aiSmartSaveNote({
+      content,
+      vaultPath: currentVaultPath,
+      vaultFolders,
+      inboxFolder,
+      inboxPath,
+      sourceType,
+      sourceTitle
+    })
+  } catch (e) {
+    if (msgEl) {
+      msgEl.style.background = '#fdecea'
+      msgEl.style.color = '#a32d2d'
+      msgEl.textContent = '❌ 保存失败：' + e.message
+    }
+    return
+  }
+
+  if (!res || !res.success) {
+    if (msgEl) {
+      msgEl.style.background = '#fdecea'
+      msgEl.style.color = '#a32d2d'
+      msgEl.textContent = '❌ 保存失败：' + (res ? res.error : '未知错误')
+    }
+    return
+  }
+
+  // 构建提示信息
+  const safePath = res.path.replace(/'/g, "\\'")
+  let msg = ''
+  if (res.noMatch) {
+    msg = '⚠️ 未找到匹配文件夹，已存入' + (res.usedInbox ? '临时文件夹' : '待处理文件库') + '：' + res.path
+  } else {
+    msg = '✅ 已保存到「' + res.folder + '」：' + res.path
+  }
+  if (res.tags) msg += '　标签：' + res.tags
+
+  if (msgEl) {
+    msgEl.style.background = res.noMatch ? '#fff8e1' : '#e8f5e9'
+    msgEl.style.color      = res.noMatch ? '#7a5c00' : '#2e6b3a'
+    msgEl.innerHTML = msg +
+      ' <button class="open-btn" style="margin-left:8px" onclick="openFile(\'' + safePath + '\')">📂 查看</button>'
+  }
+
+  if (typeof onDone === 'function') onDone(res)
+}
+
 async function saveAnalyzeResult() {
   if (!analyzeResultText || !currentVaultPath) return
   const targetDir = currentInboxPath || currentVaultPath
@@ -2884,35 +2957,12 @@ function copyFeedNote() {
 
 async function saveFeedNote() {
   if (!_feedNoteContent || !_feedNoteItem) return
-  const settings = await window.api.getAiSettings()
-  const inboxPath = settings.inboxFolder || currentInboxPath || null
-  if (!inboxPath) { alert('请先在设置中配置待处理文件库路径'); return }
-
   const item = _feedNoteItem
-  const safeTitle = (item.title || '订阅内容').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
-  const now = new Date()
-  const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
   const platformName = { youtube:'YouTube', xiaohongshu:'小红书', x:'X', instagram:'Instagram', facebook:'Facebook' }[item.platform] || item.platform
-
-  const body = `---\ntitle: "${safeTitle}"\nsource: "${item.url || ''}"\nplatform: "${platformName}"\nauthor: "${item.sourceName || ''}"\ndate: "${dateStr}"\ntags: []\n---\n\n${_feedNoteContent}`
-
-  const res = await window.api.createNote({
-    vaultPath: currentVaultPath,
-    targetDir: inboxPath,
-    title: `${platformName}_${safeTitle}_${dateStr}`,
-    template: 'blank',
-    body
-  })
-
+  const sourceTitle = (item.title || '订阅内容')
+  const content = `来源平台：${platformName}\n作者：${item.sourceName || ''}\n链接：${item.url || ''}\n\n${_feedNoteContent}`
   const msgEl = document.getElementById('feed-note-save-msg')
-  msgEl.style.display = 'block'
-  if (res.success) {
-    msgEl.style.background = '#eaf3de'; msgEl.style.color = '#3b6d11'
-    msgEl.textContent = '✅ 已保存到：' + res.path
-  } else {
-    msgEl.style.background = '#fcebeb'; msgEl.style.color = '#a32d2d'
-    msgEl.textContent = '❌ 保存失败：' + res.error
-  }
+  await smartSaveNote(content, `订阅内容(${platformName})`, sourceTitle, msgEl)
 }
 
 async function processSelectedFeedItems() {
@@ -2966,35 +3016,9 @@ function copyWebNote() {
 
 async function saveWebNote() {
   if (!_webNoteResult) return
-  const settings = await window.api.getAiSettings()
-  const inboxPath = settings.inboxFolder || currentInboxPath || null
-  if (!inboxPath) { alert('请先在设置中配置「待处理文件库路径」'); return }
-
-  const safeTitle = (_webNoteResult.title || '网页笔记').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
-  const now = new Date()
-  const dateStr = now.getFullYear() + '-' +
-    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
-
-  const body = `---\ntitle: "${_webNoteResult.title}"\nsource: "${_webNoteResult.url}"\ndate: "${dateStr}"\ntags: []\n---\n\n${_webNoteResult.note}`
-
-  const res = await window.api.createNote({
-    vaultPath: currentVaultPath,
-    targetDir: inboxPath,
-    title: 'Web_' + safeTitle + '_' + dateStr,
-    template: 'blank',
-    body
-  })
   const msgEl = document.getElementById('web-save-msg')
-  msgEl.style.display = 'block'
-  if (res.success) {
-    msgEl.style.background = '#eaf3de'
-    msgEl.style.color = '#3b6d11'
-    msgEl.textContent = '✅ 已保存到：' + res.path
-  } else {
-    msgEl.style.background = '#fcebeb'
-    msgEl.style.color = '#a32d2d'
-    msgEl.textContent = '❌ 保存失败：' + res.error
-  }
+  const content = `来源：${_webNoteResult.url}\n\n${_webNoteResult.note}`
+  await smartSaveNote(content, '网页', _webNoteResult.title || '网页笔记', msgEl)
 }
 
 async function doWebpageToNote() {
@@ -3110,36 +3134,12 @@ function copyYtNote() {
 
 async function saveYtNote() {
   if (!_ytNoteResult) return
-  const settings = await window.api.getAiSettings()
-  const inboxPath = settings.inboxFolder || currentInboxPath || null
-  if (!inboxPath) { alert('请先在设置中配置「待处理文件库路径」'); return }
-
-  const safeTitle = (_ytNoteResult.videoTitle || 'YouTube笔记').replace(/[\\/:*?"<>|]/g, '_').slice(0, 50)
-  const now = new Date()
-  const dateStr = now.getFullYear() + '-' +
-    String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
-
-  const body = `---\ntitle: "${_ytNoteResult.videoTitle}"\nauthor: "${_ytNoteResult.author}"\nduration: "${_ytNoteResult.duration}"\nsource: "${document.getElementById('yt-url-input').value.trim()}"\ndate: "${dateStr}"\ntags: []\n---\n\n${_ytNoteResult.note}`
-
-  const res = await window.api.createNote({
-    vaultPath: currentVaultPath,
-    targetDir: inboxPath,
-    title: 'YT_' + safeTitle + '_' + dateStr,
-    template: 'blank',
-    body
-  })
   const msgEl = document.getElementById('yt-save-msg')
-  if (res.success) {
-    msgEl.style.display = 'block'
-    msgEl.style.background = '#eaf3de'
-    msgEl.style.color = '#3b6d11'
-    msgEl.textContent = '✅ 已保存到：' + res.path
-  } else {
-    msgEl.style.display = 'block'
-    msgEl.style.background = '#fcebeb'
-    msgEl.style.color = '#a32d2d'
-    msgEl.textContent = '❌ 保存失败：' + res.error
-  }
+  const ytUrl = document.getElementById('yt-url-input').value.trim()
+  const now = new Date()
+  const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0')
+  const content = `来源：${ytUrl}\n作者：${_ytNoteResult.author || ''}\n时长：${_ytNoteResult.duration || ''}\n日期：${dateStr}\n\n${_ytNoteResult.note}`
+  await smartSaveNote(content, 'YouTube视频', _ytNoteResult.videoTitle || 'YouTube笔记', msgEl)
 }
 
 async function doAudioToNote() {
@@ -3196,8 +3196,6 @@ function copyAudioNote() {
 
 async function saveAudioNote() {
   if (!audioNoteResultText) { alert('没有可保存的内容'); return }
-  if (!currentInboxPath) { alert('请先在系统设置中配置「待处理文件库」路径'); return }
-  // 从文件路径提取文件名（不依赖 require，用简单字符串处理）
   let baseName = '音频笔记'
   if (currentAudioFilePath) {
     const parts = currentAudioFilePath.replace(/\\/g, '/').split('/')
@@ -3207,33 +3205,8 @@ async function saveAudioNote() {
   }
   const saveEl = document.getElementById('audio-note-save-result')
   const saveBtn = document.getElementById('btn-save-audio-note')
-  saveEl.style.display = 'block'
-  saveEl.textContent = '保存中...'
-  saveEl.style.background = '#f5f4f0'
-  saveEl.style.color = '#888780'
   if (saveBtn) saveBtn.disabled = true
-  try {
-    const res = await window.api.createNote({
-      vaultPath: currentVaultPath,
-      targetDir: currentInboxPath,
-      title: baseName + '_转录笔记',
-      template: 'blank',
-      body: audioNoteResultText
-    })
-    if (res.success) {
-      saveEl.textContent = '✅ 已保存到待处理文件库：' + currentInboxPath
-      saveEl.style.background = '#e8f5e9'
-      saveEl.style.color = '#2e6b3a'
-    } else {
-      saveEl.textContent = '❌ 保存失败：' + (res.error || '未知错误')
-      saveEl.style.background = '#fdecea'
-      saveEl.style.color = '#a32d2d'
-    }
-  } catch (e) {
-    saveEl.textContent = '❌ 错误：' + e.message
-    saveEl.style.background = '#fdecea'
-    saveEl.style.color = '#a32d2d'
-  }
+  await smartSaveNote(audioNoteResultText, '音频/视频', baseName, saveEl)
   if (saveBtn) saveBtn.disabled = false
 }
 
