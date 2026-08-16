@@ -564,7 +564,7 @@ function findOrCreateHubFile(folderPath, settings) {
   const hubPath = path.join(folderPath, hubFileName)
 
   // 创建初始内容
-  const initialContent = `---\ntags: [hub]\n---\n\n# 📁 ${cleanName}\n\n`
+  const initialContent = `---\n---\n\n# 📁 ${cleanName}\n\n`
   fs.writeFileSync(hubPath, initialContent, 'utf-8')
   return hubPath
 }
@@ -622,7 +622,7 @@ function updateHubFile(folderPath, vaultPath, settings) {
 
     // 提取 frontmatter 和正文
     const fmMatch = hubContent.match(/^---[\s\S]*?---\r?\n?/)
-    const frontmatter = fmMatch ? fmMatch[0] : '---\ntags: [hub]\n---\n\n'
+    const frontmatter = fmMatch ? fmMatch[0] : '---\n---\n\n'
     const bodyWithoutFm = fmMatch ? hubContent.slice(fmMatch[0].length) : hubContent
 
     // 提取已有的 wikilinks
@@ -839,6 +839,9 @@ ipcMain.handle('scan-missing-summary', async (event, { scanPath, vaultPath }) =>
         const stat = fs.lstatSync(full)
         if (stat.isDirectory()) { walk(full); continue }
         if (!item.endsWith('.md')) continue
+        // 排除 Hub 文件（导航索引文件不需要标签）
+        const lname = item.toLowerCase()
+        if (lname.endsWith(' hub.md') || lname === 'hub.md' || lname === 'readme.md' || lname === 'index.md' || lname === 'moc.md') continue
         const content = fs.readFileSync(full, 'utf-8')
         // 检查是否有 tags 字段且不为空
         const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
