@@ -544,10 +544,22 @@ function findExistingHubFile(folderPath, settings) {
     ? customNames
     : HUB_FILENAME_CANDIDATES
 
+  // 先检查固定候选名
   for (const name of candidates) {
     const p = path.join(folderPath, name)
     if (fs.existsSync(p)) return p
   }
+
+  // 再扫描文件夹，找 "* Hub.md" 格式的文件（如 Claude Hub.md、AI Hub.md）
+  try {
+    const files = fs.readdirSync(folderPath)
+    for (const f of files) {
+      if (f.toLowerCase().endsWith(' hub.md') || f.toLowerCase() === 'hub.md') {
+        return path.join(folderPath, f)
+      }
+    }
+  } catch (_) {}
+
   return null
 }
 
