@@ -86,4 +86,7 @@ contextBridge.exposeInMainWorld('api', {
   onWebpageProgress: (cb)        => ipcRenderer.on('webpage-note-progress', (_e, msg) => cb(msg)),
   offWebpageProgress:()          => ipcRenderer.removeAllListeners('webpage-note-progress'),
   aiSmartSaveNote:   (args)      => ipcRenderer.invoke('ai-smart-save-note', args),
+  getAppVersion:     ()          => ipcRenderer.invoke('get-app-version'),
+  onUpdateDownloading:(cb)       => ipcRenderer.on('update-downloading', (_e) => cb()),
+  onUpdateProgress:  (cb)        => ipcRenderer.on('update-progress', (_e, percent) => cb(percent)),
 })

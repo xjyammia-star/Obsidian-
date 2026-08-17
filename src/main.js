@@ -3,6 +3,7 @@ const path = require('path')
 const fs = require('fs')
 const https = require('https')
 const Store = require('electron-store')
+const { autoUpdater } = require('electron-updater')
 
 const store = new Store()
 let mainWindow
@@ -24,6 +25,43 @@ function createWindow() {
   // 主进程监听渲染进程的 drop 事件，获取文件路径
 }
 
+// ── 自动更新配置 ──
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
+
+autoUpdater.on('update-available', (info) => {
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'info',
+    title: '发现新版本',
+    message: `发现新版本 v${info.version}`,
+    detail: '是否现在下载更新？下载完成后会提示重启安装。',
+    buttons: ['立即更新', '稍后再说'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (choice === 0) {
+    autoUpdater.downloadUpdate()
+    mainWindow.webContents.send('update-downloading')
+  }
+})
+autoUpdater.on('update-not-available', () => {})
+autoUpdater.on('error', () => {})
+autoUpdater.on('download-progress', (progress) => {
+  mainWindow.webContents.send('update-progress', Math.floor(progress.percent))
+})
+autoUpdater.on('update-downloaded', () => {
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'info',
+    title: '更新已就绪',
+    message: '新版本已下载完成',
+    detail: '点击「立即重启」完成安装，或稍后手动重启。',
+    buttons: ['立即重启', '稍后重启'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (choice === 0) autoUpdater.quitAndInstall()
+})
+
 app.whenReady().then(() => {
   createWindow()
   if (process.platform === 'darwin') {
@@ -36,9 +74,15 @@ app.whenReady().then(() => {
       }
     } catch (e) { console.log('dock icon error:', e.message) }
   }
+  setTimeout(() => {
+    try { autoUpdater.checkForUpdates() } catch (_) {}
+  }, 3000)
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+
+// ── 版本号 ──
+ipcMain.handle('get-app-version', () => app.getVersion())
 
 // ── 选择知识库 ──
 ipcMain.handle('select-vault', async () => {
