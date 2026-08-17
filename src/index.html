@@ -2500,6 +2500,18 @@ async function saveYtCaption() {
 }
 
 /* ── 订阅追踪 ── */
+// ── 订阅时间格式化工具函数 ──
+function formatFeedTime(publishedAt) {
+  if (!publishedAt) return ''
+  // 先尝试解析为 Date 对象（适用于 ISO 字符串 / YouTube / X / Ins）
+  const d = new Date(publishedAt)
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+  // 无法解析为日期（如 Facebook 的相对时间 "2小时前" / aria-label 文本）直接显示原文
+  return publishedAt
+}
+
 const FEED_PLATFORMS = {
   youtube:      { name: 'YouTube',    icon: '▶️', needLogin: false, hint: '例如：https://www.youtube.com/@channelname 或频道 ID' },
   xiaohongshu:  { name: '小红书',     icon: '🔴', needLogin: true,  hint: '例如：https://www.xiaohongshu.com/user/profile/xxx' },
@@ -2580,7 +2592,7 @@ async function renderFeedList() {
             const globalIdx = _feedItems.indexOf(item)
             const typeInfo = { video:{label:'视频',color:'#534ab7',canProcess:true,action:'整理配文'}, article:{label:'图文',color:'#0f6e56',canProcess:true,action:'AI整理'}, tweet:{label:'推文',color:'#0f6e56',canProcess:true,action:'AI整理'}, image:{label:'图片',color:'#888780',canProcess:true,action:'整理配文'}, unknown:{label:'未知',color:'#888780',canProcess:true,action:'AI整理'} }
             const t = typeInfo[item.type] || typeInfo.unknown
-            const date = item.publishedAt ? new Date(item.publishedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
+            const date = formatFeedTime(item.publishedAt)
             return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-top:1px solid #f1efe8;background:#fff">
               <input type="checkbox" class="feed-item-cb" data-index="${globalIdx}" style="margin-top:3px;width:15px;height:15px;accent-color:#534ab7;flex-shrink:0">
               <div style="flex:1;min-width:0">
@@ -2831,9 +2843,7 @@ function renderFeedUpdates() {
   listEl.innerHTML = _feedItems.map((item, i) => {
     const p = FEED_PLATFORMS[item.platform] || { icon: '📡' }
     const t = typeInfo[item.type] || typeInfo.unknown
-    const date = item.publishedAt
-      ? new Date(item.publishedAt).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })
-      : ''
+    const date = formatFeedTime(item.publishedAt)
     return `<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #e8e6de;border-radius:10px;margin-bottom:8px;background:#fff">
       <input type="checkbox" class="feed-item-cb" data-index="${i}" style="margin-top:3px;width:15px;height:15px;accent-color:#534ab7;flex-shrink:0">
       <div style="flex:1;min-width:0">

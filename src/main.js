@@ -2498,38 +2498,92 @@ async function checkFeedByBrowser(feed, ses) {
                 if (link) items.push({ title: text.slice(0,100), url: link, type, summary: text.slice(0,200), id: link.split('?')[0], publishedAt })
               })
             } else if (platform === 'instagram') {
-              // Instagram 主页的帖子时间在 article 里的 time 标签
+              // Instagram shortcode → 发布时间（shortcode 前11位可解码出时间戳）
+              function igShortcodeToDate(shortcode) {
+                try {
+                  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+                  let n = BigInt(0)
+                  for (let i = 0; i < Math.min(shortcode.length, 11); i++) {
+                    n = n * BigInt(64) + BigInt(chars.indexOf(shortcode[i]))
+                  }
+                  // Instagram epoch: 2011-01-01 (1293840000000ms), 时间戳在高位
+                  const ms = Number(n >> BigInt(23)) + 1314220021721
+                  const d = new Date(ms)
+                  // 合理范围：2012年 ~ 现在
+                  if (d.getFullYear() >= 2012 && d.getFullYear() <= new Date().getFullYear() + 1) {
+                    return d.toISOString()
+                  }
+                } catch(_) {}
+                return ''
+              }
+              // 从链接提取 shortcode
+              function igLinkToDate(link) {
+                const m = link.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/)
+                return m ? igShortcodeToDate(m[2]) : ''
+              }
+              // 主路径：article 里的帖子
               document.querySelectorAll('article').forEach(el => {
-                const a = el.querySelector('a[href*="/p/"],a[href*="/reel/"]')
+                const a = el.querySelector('a[href*="/p/"],a[href*="/reel/"],a[href*="/tv/"]')
                 const link = a?.href || ''
                 const alt = el.querySelector('img')?.alt || ''
-                const isReel = link.includes('/reel/')
+                const isReel = link.includes('/reel/') || link.includes('/tv/')
+                // 先尝试 <time> 标签，再用 shortcode 解码
                 const timeEl = el.querySelector('time')
-                const publishedAt = timeEl ? (timeEl.getAttribute('datetime') || '') : ''
+                const publishedAt = (timeEl && timeEl.getAttribute('datetime')) || igLinkToDate(link)
                 if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt })
               })
-              // 备用：主页帖子列表（未展开时）
+              // 备用：主页网格帖子链接（未展开时）
               if (!items.length) {
-                document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"]').forEach(el => {
+                document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"],a[href*="/tv/"]').forEach(el => {
                   const link = el.href || ''
                   const alt = el.querySelector('img')?.alt || ''
-                  const isReel = link.includes('/reel/')
-                  if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt: '' })
+                  const isReel = link.includes('/reel/') || link.includes('/tv/')
+                  const publishedAt = igLinkToDate(link)
+                  if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt })
                 })
               }
             } else if (platform === 'facebook') {
               document.querySelectorAll('[role="article"]').forEach(el => {
                 const text = el.querySelector('[data-ad-preview="message"]')?.textContent?.trim() || el.querySelector('p')?.textContent?.trim() || ''
-                const a = el.querySelector('a[href*="/posts/"],a[href*="/videos/"],a[href*="/photo"]')
-                const link = a?.href || ''
+                const a = el.querySelector('a[href*="/posts/"],a[href*="/videos/"],a[href*="/photo"],a[href*="/reel/"]')
+                const rawLink = a?.href || ''
+                // 去掉链接中的动态参数，只保留稳定的路径部分作为 ID
+                let stableLink = rawLink
+                try { const u = new URL(rawLink); stableLink = u.origin + u.pathname } catch(_) {}
                 const type = el.querySelector('video') ? 'video' : text ? 'article' : 'unknown'
-                const timeEl = el.querySelector('abbr[data-utime], abbr[title], time')
+                // 现代 Facebook 时间提取：尝试多种方式
                 let publishedAt = ''
-                if (timeEl) {
-                  const utime = timeEl.getAttribute('data-utime')
-                  publishedAt = utime ? new Date(parseInt(utime)*1000).toISOString() : (timeEl.getAttribute('datetime') || timeEl.getAttribute('title') || '')
+                // 方式1：老格式 abbr[data-utime]
+                const abbrEl = el.querySelector('abbr[data-utime]')
+                if (abbrEl) {
+                  const utime = abbrEl.getAttribute('data-utime')
+                  publishedAt = utime ? new Date(parseInt(utime)*1000).toISOString() : ''
                 }
-                if (link || text) items.push({ title: text.slice(0,100) || '内容', url: link, type, summary: text.slice(0,200), id: (link||text).slice(0,80), publishedAt })
+                // 方式2：<time> 标签
+                if (!publishedAt) {
+                  const timeEl = el.querySelector('time')
+                  if (timeEl) publishedAt = timeEl.getAttribute('datetime') || ''
+                }
+                // 方式3：链接的 aria-label（如 "8月15日 下午3:22"）
+                if (!publishedAt) {
+                  const linkWithTime = el.querySelector('a[aria-label]')
+                  const ariaLabel = linkWithTime?.getAttribute('aria-label') || ''
+                  // 尝试解析常见格式，如 "August 15 at 3:22 PM" 或 "8月15日"
+                  if (ariaLabel && /\d/.test(ariaLabel)) publishedAt = ariaLabel
+                }
+                // 方式4：span 显示的相对时间，如 "2小时前" / "2h"（只做标记，不做实际解析）
+                if (!publishedAt) {
+                  const spans = el.querySelectorAll('span')
+                  for (const s of spans) {
+                    const t = s.textContent?.trim() || ''
+                    if (/^\d+(分钟|小时|天|周|月|年|mins?|hours?|days?|weeks?|months?|yrs?|h|d|w|m ago)/.test(t)) {
+                      publishedAt = t; break
+                    }
+                  }
+                }
+                // ID 优先用稳定链接，其次用正文前60字符
+                const stableId = stableLink || text.slice(0, 60)
+                if (stableId) items.push({ title: text.slice(0,100) || '内容', url: rawLink || stableLink, type, summary: text.slice(0,200), id: stableId, publishedAt })
               })
             }
             return [...new Map(items.map(x=>[x.id,x])).values()].slice(0,20)
@@ -2602,8 +2656,16 @@ ipcMain.handle('feed-check-one', async (event, index) => {
     // 后续检查：只返回上次检查之后新发布且未读的内容
     const lastCheckTime = new Date(feed.lastCheck)
     let newItems = allItems.filter(it => {
+      // 已读过的 ID 一律过滤掉
       if ((feed.seenIds || []).includes(it.id)) return false
-      if (it.publishedAt && new Date(it.publishedAt) <= lastCheckTime) return false
+      // 有明确时间戳的：必须晚于上次检查时间
+      if (it.publishedAt) {
+        const pub = new Date(it.publishedAt)
+        if (!isNaN(pub.getTime()) && pub <= lastCheckTime) return false
+      } else {
+        // 无时间戳：依赖 seenIds 去重，已在上面处理，这里视为"新"
+        // 但同时保留——下面会立即把它加入 seenIds，下次就不会再显示
+      }
       return true
     })
     newItems = newItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
@@ -2638,7 +2700,10 @@ ipcMain.handle('feed-check-all', async (event) => {
         const lastCheckTime = new Date(feed.lastCheck)
         let newItems = items.filter(it => {
           if ((feed.seenIds || []).includes(it.id)) return false
-          if (it.publishedAt && new Date(it.publishedAt) <= lastCheckTime) return false
+          if (it.publishedAt) {
+            const pub = new Date(it.publishedAt)
+            if (!isNaN(pub.getTime()) && pub <= lastCheckTime) return false
+          }
           return true
         })
         newItems = newItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
