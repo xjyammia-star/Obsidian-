@@ -1,6 +1,6 @@
 {
   "name": "obsidian-manager",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Obsidian 知识库管理工具",
   "author": "xjyammia-star",
   "main": "src/main.js",

@@ -47,14 +47,14 @@ autoUpdater.on('update-available', (info) => {
 })
 autoUpdater.on('update-not-available', () => {})
 autoUpdater.on('error', (err) => {
-  // 下载出错时通知用户，而不是静默卡住
+  const errMsg = err ? err.message : '未知错误'
   try {
     mainWindow.webContents.send('update-error')
     dialog.showMessageBoxSync(mainWindow, {
       type: 'warning',
       title: '更新失败',
       message: '自动更新下载失败',
-      detail: '请稍后重启软件重试，或前往 GitHub 手动下载新版本。\nhttps://github.com/xjyammia-star/Obsidian-/releases/latest',
+      detail: `错误信息：${errMsg}\n\n请稍后重启软件重试，或前往 GitHub 手动下载新版本。\nhttps://github.com/xjyammia-star/Obsidian-/releases/latest`,
       buttons: ['确定']
     })
   } catch(_) {}
