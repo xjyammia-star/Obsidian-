@@ -1139,14 +1139,24 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (verEl && ver) verEl.textContent = 'v' + ver
 
   // 监听更新下载进度
-  window.api.onUpdateDownloading && window.api.onUpdateDownloading(() => {
-    const el = document.getElementById('update-status')
-    if (el) el.textContent = '⬇️ 正在下载更新...'
-  })
-  window.api.onUpdateProgress && window.api.onUpdateProgress((percent) => {
-    const el = document.getElementById('update-status')
-    if (el) el.textContent = `⬇️ 下载中 ${percent}%`
-  })
+  if (window.api.onUpdateDownloading) {
+    window.api.onUpdateDownloading(() => {
+      const el = document.getElementById('update-status')
+      if (el) el.textContent = '⬇️ 正在下载更新... 0%'
+    })
+  }
+  if (window.api.onUpdateProgress) {
+    window.api.onUpdateProgress((percent) => {
+      const el = document.getElementById('update-status')
+      if (el) el.textContent = `⬇️ 正在下载更新... ${percent}%`
+    })
+  }
+  if (window.api.onUpdateError) {
+    window.api.onUpdateError(() => {
+      const el = document.getElementById('update-status')
+      if (el) { el.textContent = '❌ 下载失败，请重启软件重试'; el.style.color = '#a32d2d' }
+    })
+  }
 })
 
 async function selectVault() {

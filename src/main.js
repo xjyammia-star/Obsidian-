@@ -28,6 +28,7 @@ function createWindow() {
 // ── 自动更新配置 ──
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
+autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' }
 
 autoUpdater.on('update-available', (info) => {
   const choice = dialog.showMessageBoxSync(mainWindow, {
@@ -45,7 +46,19 @@ autoUpdater.on('update-available', (info) => {
   }
 })
 autoUpdater.on('update-not-available', () => {})
-autoUpdater.on('error', () => {})
+autoUpdater.on('error', (err) => {
+  // 下载出错时通知用户，而不是静默卡住
+  try {
+    mainWindow.webContents.send('update-error')
+    dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: '更新失败',
+      message: '自动更新下载失败',
+      detail: '请稍后重启软件重试，或前往 GitHub 手动下载新版本。\nhttps://github.com/xjyammia-star/Obsidian-/releases/latest',
+      buttons: ['确定']
+    })
+  } catch(_) {}
+})
 autoUpdater.on('download-progress', (progress) => {
   mainWindow.webContents.send('update-progress', Math.floor(progress.percent))
 })
