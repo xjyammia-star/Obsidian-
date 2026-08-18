@@ -1078,6 +1078,8 @@ ipcMain.handle('get-ai-settings', () => {
     modelId: '',
     endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
     audioModelId: '',
+    audioApiKey: '',
+    audioEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
     aiClassifyEnabled: false,
     reminderEnabled: false,
     reminderAdvance: 0,
@@ -1486,26 +1488,24 @@ ipcMain.handle('select-audio-file', async () => {
 
 ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => {
   const settings = store.get('aiSettings', {})
-  if (!settings.apiKey) return { success: false, error: '请先在系统设置中配置 API Key' }
+  const audioApiKey = settings.audioApiKey || settings.apiKey || ''
+  if (!audioApiKey) return { success: false, error: '请先在系统设置中配置音视频模型的 API Key' }
   const audioModelId = settings.audioModelId || ''
-  if (!audioModelId) return { success: false, error: '请先在系统设置中配置「音频/视频模型 ID」（如 doubao-seed-2.0-lite 的接入点 ID）' }
-
-  const endpoint = settings.endpoint || 'https://ark.cn-beijing.volces.com/api/v3'
+  if (!audioModelId) return { success: false, error: '请先在系统设置中配置「音视频模型 ID」（如 doubao-seed-2.0-lite 的接入点 ID）' }
+  const endpoint = settings.audioEndpoint || settings.endpoint || 'https://ark.cn-beijing.volces.com/api/v3'
 
   try {
     // Step 1: 上传文件到 Files API
     event.sender.send('audio-note-progress', { step: 'upload', msg: '正在上传文件（可能需要几十秒）...' })
-    const fileId = await uploadFileToArk(settings.apiKey, endpoint, filePath)
-
-    // Step 1.5: 等待文件处理完毕（status 变为 active）
+    const fileId = await uploadFileToArk(audioApiKey, endpoint, filePath)
     event.sender.send('audio-note-progress', { step: 'upload', msg: '文件上传成功，等待处理完毕...' })
-    await waitFileActive(settings.apiKey, endpoint, fileId)
+    await waitFileActive(audioApiKey, endpoint, fileId)
 
     // Step 2: 调用多模态模型转录+理解
     event.sender.send('audio-note-progress', { step: 'transcribe', msg: '正在识别语音内容...' })
     const fileName = path.basename(filePath)
     const transcribePrompt = '请完整转录这个音频/视频文件中的所有语音内容，输出完整的转录文本，不要遗漏任何内容，保持自然段落分隔。只输出转录文本，不要加任何说明。'
-    const transcriptRaw = await callArkMultimodal(settings.apiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
+    const transcriptRaw = await callArkMultimodal(audioApiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
 
     // 如果是空或者错误信息，直接返回原始内容方便调试
     if (!transcriptRaw) {
