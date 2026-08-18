@@ -1,6 +1,6 @@
 {
   "name": "obsidian-manager",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Obsidian 知识库管理工具",
   "author": "xjyammia-star",
   "main": "src/main.js",
@@ -28,7 +28,8 @@
     "publish": {
       "provider": "github",
       "owner": "xjyammia-star",
-      "repo": "Obsidian-"
+      "repo": "Obsidian-",
+      "releaseType": "release"
     },
     "nsis": {
       "oneClick": false,
