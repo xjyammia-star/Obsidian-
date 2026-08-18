@@ -90,4 +90,5 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateDownloading:(cb)       => ipcRenderer.on('update-downloading', (_e) => cb()),
   onUpdateProgress:  (cb)        => ipcRenderer.on('update-progress', (_e, percent) => cb(percent)),
   onUpdateError:     (cb)        => ipcRenderer.on('update-error', (_e) => cb()),
+  onUpdateBrowserDownload: (cb) => ipcRenderer.on('update-browser-download', (_e) => cb()),
 })

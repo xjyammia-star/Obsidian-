@@ -28,10 +28,6 @@ function createWindow() {
 // ── 自动更新配置 ──
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
-autoUpdater.requestHeaders = { 'Cache-Control': 'no-cache' }
-autoUpdater.allowDowngrade = false
-// 未签名应用禁用差量更新，强制全量下载
-process.env.ELECTRON_UPDATER_ALLOW_UNSIGNED = '1'
 
 autoUpdater.on('update-available', (info) => {
   const choice = dialog.showMessageBoxSync(mainWindow, {
@@ -75,7 +71,7 @@ autoUpdater.on('update-downloaded', () => {
     defaultId: 0,
     cancelId: 1
   })
-  if (choice === 0) autoUpdater.quitAndInstall()
+  if (choice === 0) autoUpdater.quitAndInstall(true, true)
 })
 
 app.whenReady().then(() => {

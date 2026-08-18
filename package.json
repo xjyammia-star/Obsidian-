@@ -1,6 +1,6 @@
 {
   "name": "obsidian-manager",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Obsidian 知识库管理工具",
   "author": "xjyammia-star",
   "main": "src/main.js",
@@ -23,7 +23,8 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "obsidian-manager-setup-${version}.exe"
     },
     "publish": {
       "provider": "github",
@@ -33,12 +34,12 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "installerLanguages": [
         "zh_CN"
       ],
-      "language": "2052",
-      "artifactName": "Obsidian管理工具-Setup-${version}.exe"
+      "language": "2052"
     }
   },
   "devDependencies": {
