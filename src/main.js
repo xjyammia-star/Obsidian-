@@ -2602,11 +2602,24 @@ async function checkFeedByBrowser(feed, ses) {
     const win = new BW({ width: 1200, height: 800, show: false,
       webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true } })
     win.loadURL(feed.url)
-    const timeout = setTimeout(() => { try { win.destroy() } catch (_) {}; resolve([]) }, 25000)
+    const timeout = setTimeout(() => { try { win.destroy() } catch (_) {}; resolve([]) }, 40000)
     win.webContents.on('did-finish-load', async () => {
       clearTimeout(timeout)
       try {
-        await new Promise(r => setTimeout(r, 5000))  // 等待 JS 动态渲染完成
+        // Facebook/Instagram 需要额外等待动态渲染，其他平台 5 秒够用
+        const waitMs = ['facebook', 'instagram'].includes(feed.platform) ? 8000 : 5000
+        await new Promise(r => setTimeout(r, waitMs))
+        // Facebook 帖子是懒加载的，自动滚动触发加载更多内容
+        if (feed.platform === 'facebook') {
+          await win.webContents.executeJavaScript(`
+            window.scrollTo(0, 800);
+            await new Promise(r => setTimeout(r, 1500));
+            window.scrollTo(0, 1600);
+            await new Promise(r => setTimeout(r, 1000));
+            window.scrollTo(0, 0);
+          `).catch(() => {})
+          await new Promise(r => setTimeout(r, 2000))
+        }
         const platform = feed.platform
         const items = await win.webContents.executeJavaScript(`
           (function() {
