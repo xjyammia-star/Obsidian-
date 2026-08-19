@@ -1180,6 +1180,15 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (el) { el.textContent = '🌐 已在浏览器打开下载，安装后重启即可'; el.style.color = '#3b6d11' }
     })
   }
+  if (window.api.onUpdateAvailableMac) {
+    window.api.onUpdateAvailableMac((ver) => {
+      const el = document.getElementById('update-status')
+      if (el) {
+        el.innerHTML = `🆕 发现新版本 v${ver}，<a href="https://github.com/xjyammia-star/Obsidian-/releases/latest" target="_blank" style="color:#3b6d11">点击前往下载</a>`
+        el.style.color = '#5f5e5a'
+      }
+    })
+  }
 })
 
 async function selectVault() {

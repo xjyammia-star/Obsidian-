@@ -23,7 +23,7 @@
       ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.productivity",
-      "artifactName": "obsidian-manager-${version}-${arch}.${ext}"
+      "artifactName": "obsidian-manager-${version}.${ext}"
     },
     "win": {
       "target": "nsis",

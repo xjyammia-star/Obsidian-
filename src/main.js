@@ -86,9 +86,43 @@ app.whenReady().then(() => {
       }
     } catch (e) { console.log('dock icon error:', e.message) }
   }
-  setTimeout(() => {
-    try { autoUpdater.checkForUpdates() } catch (_) {}
-  }, 3000)
+  // Mac 无代码签名，用轻量版本检查（只提示，不自动下载）
+  // Windows 用 electron-updater 完整自动更新
+  if (process.platform === 'darwin') {
+    setTimeout(() => {
+      try {
+        https.get({
+          hostname: 'api.github.com',
+          path: '/repos/xjyammia-star/Obsidian-/releases/latest',
+          headers: { 'User-Agent': 'obsidian-manager', 'Accept': 'application/vnd.github.v3+json' }
+        }, (res) => {
+          let data = ''
+          res.on('data', chunk => data += chunk)
+          res.on('end', () => {
+            try {
+              const release = JSON.parse(data)
+              const latest = (release.tag_name || '').replace(/^v/, '')
+              const current = app.getVersion()
+              if (latest && latest !== current) {
+                const la = latest.split('.').map(Number)
+                const cu = current.split('.').map(Number)
+                let isNewer = false
+                for (let i = 0; i < 3; i++) {
+                  if ((la[i]||0) > (cu[i]||0)) { isNewer = true; break }
+                  if ((la[i]||0) < (cu[i]||0)) break
+                }
+                if (isNewer) mainWindow.webContents.send('update-available-mac', latest)
+              }
+            } catch(_) {}
+          })
+        }).on('error', () => {})
+      } catch(_) {}
+    }, 3000)
+  } else {
+    setTimeout(() => {
+      try { autoUpdater.checkForUpdates() } catch (_) {}
+    }, 3000)
+  }
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
