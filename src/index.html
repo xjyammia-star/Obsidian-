@@ -3415,13 +3415,18 @@ function renderTokenStats() {
 }
 
 async function saveAiSettings() {
+  const existing = await window.api.getAiSettings()
+  const apiKey       = document.getElementById('ai-api-key').value.trim()
+  const audioApiKey  = document.getElementById('ai-audio-api-key').value.trim()
+  const audioModelId = document.getElementById('ai-audio-model-id').value.trim()
+  const audioEndpointVal = document.getElementById('ai-audio-endpoint').value.trim()
   const s = {
-    apiKey:            document.getElementById('ai-api-key').value.trim(),
-    modelId:           document.getElementById('ai-model-id').value.trim(),
-    audioModelId:      document.getElementById('ai-audio-model-id').value.trim(),
-    audioApiKey:       document.getElementById('ai-audio-api-key').value.trim(),
-    audioEndpoint:     document.getElementById('ai-audio-endpoint').value.trim() || 'https://ark.cn-beijing.volces.com/api/v3',
-    endpoint:          document.getElementById('ai-endpoint').value.trim() || 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey:            apiKey || existing.apiKey || '',
+    modelId:           document.getElementById('ai-model-id').value.trim() || existing.modelId || '',
+    audioModelId:      audioModelId || existing.audioModelId || '',
+    audioApiKey:       audioApiKey || existing.audioApiKey || '',
+    audioEndpoint:     audioEndpointVal || existing.audioEndpoint || 'https://ark.cn-beijing.volces.com/api/v3',
+    endpoint:          document.getElementById('ai-endpoint').value.trim() || existing.endpoint || 'https://ark.cn-beijing.volces.com/api/v3',
     aiClassifyEnabled: document.getElementById('ai-classify-toggle').checked,
     reminderEnabled:   document.getElementById('reminder-toggle').checked,
     reminderAdvance:   parseInt(document.getElementById('reminder-advance').value) || 0,
