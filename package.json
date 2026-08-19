@@ -19,7 +19,8 @@
     "mac": {
       "target": "dmg",
       "icon": "assets/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "artifactName": "obsidian-manager-${version}.dmg"
     },
     "win": {
       "target": "nsis",
