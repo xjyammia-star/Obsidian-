@@ -993,11 +993,12 @@ ipcMain.handle('write-summary', async (event, { filePath }) => {
 内容摘录：
 ${body}`
 
-    const reply = await callVolcanoAI(
+    const replyObj1 = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [{ role: 'user', content: prompt }], 100
     )
-    const tagsStr = reply.trim().replace(/[\[\]"']/g, '').trim()
+    recordTokenUsage('tag', 'text', replyObj1.usage.prompt_tokens||0, replyObj1.usage.completion_tokens||0)
+    const tagsStr = (replyObj1.content||'').trim().replace(/[\[\]"']/g, '').trim()
     if (!tagsStr) return { success: false, error: 'AI 返回空内容' }
     const tags = tagsStr.split(/[,，]/).map(t => t.trim()).filter(Boolean)
     if (!tags.length) return { success: false, error: '未能解析出标签' }
@@ -1084,6 +1085,46 @@ ipcMain.handle('save-ai-settings', async (event, settings) => {
   store.set('aiSettings', settings)
   return { success: true }
 })
+// ── Token 使用统计 ──
+function recordTokenUsage(feature, modelType, inputTokens, outputTokens) {
+  try {
+    const today = new Date().toISOString().slice(0, 10)
+    const logs = store.get('tokenLogs', [])
+    logs.push({ date: today, feature, modelType, inputTokens: inputTokens||0, outputTokens: outputTokens||0 })
+    // 只保留最近 30 天
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    const trimmed = logs.filter(l => l.date >= cutoffStr)
+    store.set('tokenLogs', trimmed)
+  } catch(_) {}
+}
+
+ipcMain.handle('get-token-stats', () => {
+  const logs = store.get('tokenLogs', [])
+  const today = new Date().toISOString().slice(0, 10)
+  const d7 = new Date(); d7.setDate(d7.getDate() - 7); const d7str = d7.toISOString().slice(0, 10)
+  const d30 = new Date(); d30.setDate(d30.getDate() - 30); const d30str = d30.toISOString().slice(0, 10)
+
+  function sum(filtered) {
+    const r = { text: { input: 0, output: 0 }, audio: { input: 0, output: 0 }, byFeature: {} }
+    for (const l of filtered) {
+      if (l.modelType === 'audio') { r.audio.input += l.inputTokens; r.audio.output += l.outputTokens }
+      else { r.text.input += l.inputTokens; r.text.output += l.outputTokens }
+      if (!r.byFeature[l.feature]) r.byFeature[l.feature] = { input: 0, output: 0 }
+      r.byFeature[l.feature].input += l.inputTokens
+      r.byFeature[l.feature].output += l.outputTokens
+    }
+    return r
+  }
+
+  return {
+    today: sum(logs.filter(l => l.date === today)),
+    week:  sum(logs.filter(l => l.date >= d7str)),
+    month: sum(logs.filter(l => l.date >= d30str))
+  }
+})
+
 ipcMain.handle('get-ai-settings', () => {
   return store.get('aiSettings', {
     apiKey: '',
@@ -1135,7 +1176,7 @@ function callVolcanoAI(apiKey, modelId, endpoint, messages, maxTokens) {
       res.on('end', () => {
         try {
           const json = JSON.parse(data)
-          resolve(json.choices?.[0]?.message?.content || '')
+          resolve({ content: json.choices?.[0]?.message?.content || '', usage: json.usage || {} })
         } catch (e) { reject(e) }
       })
     })
@@ -1193,10 +1234,11 @@ ${contentForAI}
 {"folder":"xxx","tags":"xxx,xxx","title":"xxx"}`
 
   try {
-    const reply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [
+    const replyObj2 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [
       { role: 'user', content: prompt }
     ])
-    const clean = reply.replace(/```json|```/g, '').trim()
+    recordTokenUsage('save', 'text', replyObj2.usage.prompt_tokens||0, replyObj2.usage.completion_tokens||0)
+    const clean = (replyObj2.content||'').replace(/```json|```/g, '').trim()
     const result = JSON.parse(clean)
     return { success: true, folder: result.folder, tags: result.tags, title: result.title }
   } catch (err) {
@@ -1248,8 +1290,9 @@ ipcMain.handle('ai-import-files', async (event, { files, vaultPath, vaultFolders
             }
             const folderList = vaultFolders.map(f => f.label).filter(l => l !== '（根目录）').join('、')
             const prompt = `你是知识库分类助手。知识库文件夹：${folderList}\n根据以下文件信息判断：1.存放文件夹（输出相对路径如"01 AI/Claude"）2.标签（中文逗号分隔）3.md文件无标题则建议标题（20字内）\n文件信息：${contentForAI}\n只输出JSON：{"folder":"xxx","tags":"xxx","title":"xxx"}`
-            const reply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: prompt }])
-            const clean = reply.replace(/```json|```/g, '').trim()
+            const replyObj3 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: prompt }])
+            recordTokenUsage('classify', 'text', replyObj3.usage.prompt_tokens||0, replyObj3.usage.completion_tokens||0)
+            const clean = (replyObj3.content||'').replace(/```json|```/g, '').trim()
             return JSON.parse(clean)
           } catch (_) { return null }
         })()
@@ -1462,8 +1505,9 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
       const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 2000)
       if (!body) { summaries.push({ fileName, title: fileName, summary: '（文件内容为空）', keywords: [], keyPoints: [] }); continue }
       const mapPrompt = '请阅读以下笔记，提取关键信息，只输出 JSON，不要加任何其他文字：\n{"title":"笔记标题或核心主题（15字内）","keywords":["关键词1","关键词2"],"summary":"核心内容一句话概括（60字内）","keyPoints":["要点1","要点2"]}\n\n笔记文件名：' + fileName + '\n笔记内容：\n' + body
-      const reply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: mapPrompt }])
-      const clean = reply.replace(/```json|```/g, '').trim()
+      const replyObj4 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: mapPrompt }])
+      recordTokenUsage('analyze', 'text', replyObj4.usage.prompt_tokens||0, replyObj4.usage.completion_tokens||0)
+      const clean = (replyObj4.content||'').replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
       summaries.push({ fileName, title: parsed.title || fileName, keywords: parsed.keywords || [], summary: parsed.summary || '', keyPoints: parsed.keyPoints || [] })
     } catch (err) { summaries.push({ fileName, title: fileName, summary: '（解析失败）', keywords: [], keyPoints: [] }) }
@@ -1474,8 +1518,9 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
   ).join('\n\n')
   const reducePrompt = '你是一个知识管理助手。以下是用户选择的 ' + summaries.length + ' 篇笔记的摘要信息。\n\n' + summaryText + '\n\n---\n用户需求：' + userPrompt + '\n\n请根据用户需求，基于以上所有笔记内容，生成相应的输出。用中文回答，使用 Markdown 格式。'
   try {
-    const finalReply = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: reducePrompt }], 4000)
-    return { success: true, result: finalReply, fileCount: mdFiles.length }
+    const replyObj5 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: reducePrompt }], 4000)
+    recordTokenUsage('analyze', 'text', replyObj5.usage.prompt_tokens||0, replyObj5.usage.completion_tokens||0)
+    return { success: true, result: replyObj5.content, fileCount: mdFiles.length }
   } catch (err) { return { success: false, error: '生成报告失败：' + err.message } }
 })
 
@@ -1517,7 +1562,9 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
     event.sender.send('audio-note-progress', { step: 'transcribe', msg: '正在识别语音内容...' })
     const fileName = path.basename(filePath)
     const transcribePrompt = '请完整转录这个音频/视频文件中的所有语音内容，输出完整的转录文本，不要遗漏任何内容，保持自然段落分隔。只输出转录文本，不要加任何说明。'
-    const transcriptRaw = await callArkMultimodal(audioApiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
+    const transcriptResult = await callArkMultimodal(audioApiKey, audioModelId, endpoint, fileId, transcribePrompt, filePath)
+    const transcriptRaw = transcriptResult.content
+    recordTokenUsage('audio', 'audio', transcriptResult.usage.prompt_tokens||0, transcriptResult.usage.completion_tokens||0)
 
     // 如果是空或者错误信息，直接返回原始内容方便调试
     if (!transcriptRaw) {
@@ -1543,10 +1590,11 @@ ipcMain.handle('ai-audio-to-note', async (event, { filePath, customPrompt }) => 
       ? customPrompt.trim()
       : '请整理成结构化笔记，包含：核心主题、主要内容摘要、关键要点列表。'
     const organizePrompt = '以下是一段音频/视频（文件名：' + fileName + '）的完整转录内容：\n\n' + transcript + '\n\n语言要求：' + audioLangInstruction + '\n\n请根据以下要求生成笔记：\n' + basePrompt + (audioIsChinese ? '\n\n请用 Markdown 格式输出，笔记结构如下：\n1. 上半部分：AI 整理的结构化笔记\n2. 下半部分：用 --- 分隔，标题为「原始转录文本」，附上完整转录内容。' : '')
-    const organizedNote = await callVolcanoAI(settings.apiKey, noteModelId, noteEndpoint, [{ role: 'user', content: organizePrompt }], 4000)
+    const replyObj6 = await callVolcanoAI(settings.apiKey, noteModelId, noteEndpoint, [{ role: 'user', content: organizePrompt }], 4000)
+    recordTokenUsage('audio', 'text', replyObj6.usage.prompt_tokens||0, replyObj6.usage.completion_tokens||0)
 
     event.sender.send('audio-note-progress', { step: 'done', msg: '完成！' })
-    return { success: true, result: organizedNote, transcript, fileName }
+    return { success: true, result: replyObj6.content, transcript, fileName }
   } catch (err) {
     return { success: false, error: '处理失败：' + err.message }
   }
@@ -1675,7 +1723,7 @@ function callArkMultimodal(apiKey, modelId, endpoint, fileId, prompt, filePath) 
           const json = JSON.parse(data)
           if (json.error) { reject(new Error('API错误: ' + JSON.stringify(json.error))); return }
           const content = json.choices?.[0]?.message?.content
-          resolve(content !== undefined ? content : null)
+          resolve({ content: content !== undefined ? content : null, usage: json.usage || {} })
         } catch (e) { reject(new Error('解析响应失败: ' + data.slice(0, 200))) }
       })
     })
@@ -1924,7 +1972,8 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
         videoPath
       )
 
-      rawText = visionReply || ''
+      rawText = visionReply.content || ''
+      recordTokenUsage('youtube', 'audio', visionReply.usage.prompt_tokens||0, visionReply.usage.completion_tokens||0)
       captionLang = 'zh'
       usedVision = true
       sendProgress('字幕识别完成，AI 整理笔记中...')
@@ -1944,7 +1993,7 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
 
     const userMsg = '以下是 YouTube 视频的字幕内容' + sourceNote + '，请帮我整理成笔记。\n\n视频信息：\n- 标题：' + videoTitle + '\n- 作者：' + author + '\n- 时长：' + duration + '\n\n语言要求：' + langInstruction + '\n\n笔记要求：' + notePrompt + '\n\n字幕内容（前8000字）：\n' + rawText.slice(0, 8000)
 
-    const reply = await callVolcanoAI(
+    const replyObj7 = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [
         { role: 'system', content: '你是一个专业的笔记整理助手，擅长从视频字幕中提炼有价值的内容，输出结构清晰的 Markdown 笔记。若原文非中文，笔记主体必须为中文，并在末尾附上原文。' },
@@ -1952,11 +2001,12 @@ ipcMain.handle('youtube-to-note', async (event, { videoUrl, userPrompt }) => {
       ],
       4000
     )
+    recordTokenUsage('youtube', 'text', replyObj7.usage.prompt_tokens||0, replyObj7.usage.completion_tokens||0)
 
     sendProgress('完成！')
     return {
       success: true,
-      note: reply,
+      note: replyObj7.content,
       videoTitle,
       author,
       duration,
@@ -2119,7 +2169,7 @@ ipcMain.handle('webpage-to-note', async (event, { pageUrl, userPrompt, pasteCont
 正文内容（前10000字）：
 ${rawText.slice(0, 10000)}`
 
-    const reply = await callVolcanoAI(
+    const replyObj8 = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [
         { role: 'system', content: '你是一个专业的笔记整理助手，擅长从网页文章中提炼有价值的内容，输出结构清晰的 Markdown 笔记。若原文非中文，笔记主体必须为中文，并在末尾附上原文。' },
@@ -2127,11 +2177,12 @@ ${rawText.slice(0, 10000)}`
       ],
       4000
     )
+    recordTokenUsage('webpage', 'text', replyObj8.usage.prompt_tokens||0, replyObj8.usage.completion_tokens||0)
 
     sendProgress('完成！')
     return {
       success: true,
-      note: reply,
+      note: replyObj8.content,
       title: title || cleanUrl,
       rawText: rawText,
       url: cleanUrl
@@ -2179,12 +2230,13 @@ ${contentSnippet}
 
   let aiResult = null
   try {
-    const reply = await callVolcanoAI(
+    const replyObj9 = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [{ role: 'user', content: prompt }],
       500
     )
-    const clean = reply.replace(/```json|```/g, '').trim()
+    recordTokenUsage('save', 'text', replyObj9.usage.prompt_tokens||0, replyObj9.usage.completion_tokens||0)
+    const clean = (replyObj9.content||'').replace(/```json|```/g, '').trim()
     aiResult = JSON.parse(clean)
   } catch (err) {
     // AI 失败则用兜底逻辑
@@ -2323,13 +2375,14 @@ ${text}`
 ## 原文
 ${text}`
 
-    const reply = await callVolcanoAI(
+    const replyObj10 = await callVolcanoAI(
       settings.apiKey, settings.modelId, settings.endpoint,
       [{ role: 'user', content: prompt }],
       2000
     )
+    recordTokenUsage('subscription', 'text', replyObj10.usage.prompt_tokens||0, replyObj10.usage.completion_tokens||0)
 
-    return { success: true, note: reply, isTranslated: needTranslate }
+    return { success: true, note: replyObj10.content, isTranslated: needTranslate }
   } catch (err) {
     return { success: false, error: err.message }
   }
