@@ -93,4 +93,5 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateError:     (cb)        => ipcRenderer.on('update-error', (_e) => cb()),
   onUpdateBrowserDownload: (cb) => ipcRenderer.on('update-browser-download', (_e) => cb()),
   onUpdateAvailableMac:  (cb)  => ipcRenderer.on('update-available-mac', (_e, ver) => cb(ver)),
+  onFeedDebug:           (cb)  => ipcRenderer.on('feed-debug', (_e, data) => cb(data)),
 })

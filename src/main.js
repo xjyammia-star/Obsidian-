@@ -2459,6 +2459,25 @@ ipcMain.handle('feed-delete', (event, index) => {
   return { success: true }
 })
 
+ipcMain.handle('feed-reset-one', (event, index) => {
+  const feeds = getFeedStore()
+  if (feeds[index]) {
+    feeds[index].lastCheck = null
+    feeds[index].seenIds = []
+    saveFeedStore(feeds)
+  }
+  return { success: true }
+})
+
+ipcMain.handle('feed-rename', (event, { index, name }) => {
+  const feeds = getFeedStore()
+  if (feeds[index]) {
+    feeds[index].name = name
+    saveFeedStore(feeds)
+  }
+  return { success: true }
+})
+
 // 各平台登录检测：检查 cookies 里有没有登录凭证
 async function checkPlatformLogin(platform, ses) {
   const cookies = await ses.cookies.get({})
@@ -2598,160 +2617,26 @@ async function parseYoutubeRss(rssUrl) {
 
 async function checkFeedByBrowser(feed, ses) {
   const { BrowserWindow: BW } = require('electron')
+  const feedPreloadPath = path.join(__dirname, 'feed-preload.js')
   return new Promise((resolve) => {
     const win = new BW({ width: 1200, height: 800, show: false,
-      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true } })
-    win.loadURL(feed.url)
-    const timeout = setTimeout(() => { try { win.destroy() } catch (_) {}; resolve([]) }, 40000)
-    win.webContents.on('did-finish-load', async () => {
-      clearTimeout(timeout)
-      try {
-        // Facebook/Instagram 需要额外等待动态渲染，其他平台 5 秒够用
-        const waitMs = ['facebook', 'instagram'].includes(feed.platform) ? 8000 : 5000
-        await new Promise(r => setTimeout(r, waitMs))
-        // Facebook 帖子是懒加载的，自动滚动触发加载更多内容
-        if (feed.platform === 'facebook') {
-          await win.webContents.executeJavaScript(`
-            window.scrollTo(0, 800);
-            await new Promise(r => setTimeout(r, 1500));
-            window.scrollTo(0, 1600);
-            await new Promise(r => setTimeout(r, 1000));
-            window.scrollTo(0, 0);
-          `).catch(() => {})
-          await new Promise(r => setTimeout(r, 2000))
-        }
-        const platform = feed.platform
-        const items = await win.webContents.executeJavaScript(`
-          (function() {
-            const items = [], platform = '${feed.platform}'
-            // 辅助函数：从时间元素提取 ISO 时间字符串
-            function getTime(el) {
-              const t = el.querySelector('time')
-              if (t) return t.getAttribute('datetime') || t.getAttribute('title') || ''
-              const abbr = el.querySelector('abbr[data-original-title], abbr[title]')
-              if (abbr) return abbr.getAttribute('data-original-title') || abbr.getAttribute('title') || ''
-              return ''
-            }
-
-            if (platform === 'xiaohongshu') {
-              document.querySelectorAll('section.note-item, .note-item').forEach(el => {
-                const title = el.querySelector('.title, .desc, .footer .title')?.textContent?.trim() || ''
-                const a = el.querySelector('a')
-                const link = a ? (a.href.startsWith('http') ? a.href : 'https://www.xiaohongshu.com' + a.getAttribute('href')) : ''
-                const type = el.querySelector('video, .video-mask') ? 'video' : 'article'
-                const publishedAt = getTime(el)
-                if (link) items.push({ title, url: link, type, summary: '', id: link.split('?')[0], publishedAt })
-              })
-            } else if (platform === 'x') {
-              document.querySelectorAll('article[data-testid="tweet"]').forEach(el => {
-                const text = el.querySelector('[data-testid="tweetText"]')?.textContent?.trim() || ''
-                const linkEl = el.querySelector('a[href*="/status/"]')
-                const link = linkEl?.href || ''
-                const type = el.querySelector('video,[data-testid="videoPlayer"]') ? 'video' : el.querySelector('[data-testid="tweetPhoto"]') ? 'image' : 'tweet'
-                // X 的时间在 <time> 标签里
-                const timeEl = el.querySelector('time')
-                const publishedAt = timeEl ? (timeEl.getAttribute('datetime') || '') : ''
-                if (link) items.push({ title: text.slice(0,100), url: link, type, summary: text.slice(0,200), id: link.split('?')[0], publishedAt })
-              })
-            } else if (platform === 'instagram') {
-              // Instagram shortcode → 发布时间（shortcode 前11位可解码出时间戳）
-              function igShortcodeToDate(shortcode) {
-                try {
-                  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-                  let n = BigInt(0)
-                  for (let i = 0; i < Math.min(shortcode.length, 11); i++) {
-                    n = n * BigInt(64) + BigInt(chars.indexOf(shortcode[i]))
-                  }
-                  // Instagram epoch: 2011-01-01 (1293840000000ms), 时间戳在高位
-                  const ms = Number(n >> BigInt(23)) + 1314220021721
-                  const d = new Date(ms)
-                  // 合理范围：2012年 ~ 现在
-                  if (d.getFullYear() >= 2012 && d.getFullYear() <= new Date().getFullYear() + 1) {
-                    return d.toISOString()
-                  }
-                } catch(_) {}
-                return ''
-              }
-              // 从链接提取 shortcode
-              function igLinkToDate(link) {
-                const m = link.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/)
-                return m ? igShortcodeToDate(m[2]) : ''
-              }
-              // 主路径：article 里的帖子
-              document.querySelectorAll('article').forEach(el => {
-                const a = el.querySelector('a[href*="/p/"],a[href*="/reel/"],a[href*="/tv/"]')
-                const link = a?.href || ''
-                const alt = el.querySelector('img')?.alt || ''
-                const isReel = link.includes('/reel/') || link.includes('/tv/')
-                // 先尝试 <time> 标签，再用 shortcode 解码
-                const timeEl = el.querySelector('time')
-                const publishedAt = (timeEl && timeEl.getAttribute('datetime')) || igLinkToDate(link)
-                if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt })
-              })
-              // 备用：主页网格帖子链接（未展开时）
-              if (!items.length) {
-                document.querySelectorAll('a[href*="/p/"],a[href*="/reel/"],a[href*="/tv/"]').forEach(el => {
-                  const link = el.href || ''
-                  const alt = el.querySelector('img')?.alt || ''
-                  const isReel = link.includes('/reel/') || link.includes('/tv/')
-                  const publishedAt = igLinkToDate(link)
-                  if (link) items.push({ title: alt.slice(0,100) || (isReel ? '视频' : '图片'), url: link, type: isReel ? 'video' : 'image', summary: alt.slice(0,200), id: link.split('?')[0], publishedAt })
-                })
-              }
-            } else if (platform === 'facebook') {
-              document.querySelectorAll('[role="article"]').forEach(el => {
-                const text = el.querySelector('[data-ad-preview="message"]')?.textContent?.trim() || el.querySelector('p')?.textContent?.trim() || ''
-                const a = el.querySelector('a[href*="/posts/"],a[href*="/videos/"],a[href*="/photo"],a[href*="/reel/"]')
-                const rawLink = a?.href || ''
-                // 去掉链接中的动态参数，只保留稳定的路径部分作为 ID
-                let stableLink = rawLink
-                try { const u = new URL(rawLink); stableLink = u.origin + u.pathname } catch(_) {}
-                const type = el.querySelector('video') ? 'video' : text ? 'article' : 'unknown'
-                // 现代 Facebook 时间提取：尝试多种方式
-                let publishedAt = ''
-                // 方式1：老格式 abbr[data-utime]
-                const abbrEl = el.querySelector('abbr[data-utime]')
-                if (abbrEl) {
-                  const utime = abbrEl.getAttribute('data-utime')
-                  publishedAt = utime ? new Date(parseInt(utime)*1000).toISOString() : ''
-                }
-                // 方式2：<time> 标签
-                if (!publishedAt) {
-                  const timeEl = el.querySelector('time')
-                  if (timeEl) publishedAt = timeEl.getAttribute('datetime') || ''
-                }
-                // 方式3：链接的 aria-label（如 "8月15日 下午3:22"）
-                if (!publishedAt) {
-                  const linkWithTime = el.querySelector('a[aria-label]')
-                  const ariaLabel = linkWithTime?.getAttribute('aria-label') || ''
-                  // 尝试解析常见格式，如 "August 15 at 3:22 PM" 或 "8月15日"
-                  if (ariaLabel && /\d/.test(ariaLabel)) publishedAt = ariaLabel
-                }
-                // 方式4：span 显示的相对时间，如 "2小时前" / "2h"（只做标记，不做实际解析）
-                if (!publishedAt) {
-                  const spans = el.querySelectorAll('span')
-                  for (const s of spans) {
-                    const t = s.textContent?.trim() || ''
-                    if (/^\d+(分钟|小时|天|周|月|年|mins?|hours?|days?|weeks?|months?|yrs?|h|d|w|m ago)/.test(t)) {
-                      publishedAt = t; break
-                    }
-                  }
-                }
-                // ID 优先用稳定链接，其次用正文前60字符
-                const stableId = stableLink || text.slice(0, 60)
-                if (stableId) items.push({ title: text.slice(0,100) || '内容', url: rawLink || stableLink, type, summary: text.slice(0,200), id: stableId, publishedAt })
-              })
-            }
-            return [...new Map(items.map(x=>[x.id,x])).values()].slice(0,20)
-          })()
-        `)
-        try { win.destroy() } catch (_) {}
-        resolve(items || [])
-      } catch (e) {
-        try { win.destroy() } catch (_) {}
-        resolve([])
-      }
+      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, preload: feedPreloadPath }
     })
+    win.loadURL(feed.url)
+    let done = false
+    const doResolve = (items) => {
+      if (done) return
+      done = true
+      ipcMain.removeListener('feed-items-collected', onCollected)
+      try { win.destroy() } catch (_) {}
+      resolve(items || [])
+    }
+    const onCollected = (ev, result) => {
+      if (win.isDestroyed() || ev.sender !== win.webContents) return
+      doResolve(result.items || [])
+    }
+    ipcMain.on('feed-items-collected', onCollected)
+    setTimeout(() => doResolve([]), 35000)
   })
 }
 
@@ -2766,25 +2651,6 @@ async function doCheckFeed(feed) {
   }
 }
 
-ipcMain.handle('feed-reset-one', (event, index) => {
-  const feeds = getFeedStore()
-  if (feeds[index]) {
-    feeds[index].lastCheck = null
-    feeds[index].seenIds = []
-    saveFeedStore(feeds)
-  }
-  return { success: true }
-})
-
-ipcMain.handle('feed-rename', (event, { index, name }) => {
-  const feeds = getFeedStore()
-  if (feeds[index]) {
-    feeds[index].name = name
-    saveFeedStore(feeds)
-  }
-  return { success: true }
-})
-
 ipcMain.handle('feed-check-one', async (event, index) => {
   const feeds = getFeedStore()
   const feed = feeds[index]
@@ -2794,18 +2660,11 @@ ipcMain.handle('feed-check-one', async (event, index) => {
     const isFirstCheck = !feed.lastCheck
 
     if (isFirstCheck) {
-      // 第一次检查：保留今日内容，无时间戳的也列出（部分平台无法获取时间）
-      const todayStart = new Date(); todayStart.setHours(0,0,0,0)
-      const todayItems = allItems.filter(it => {
-        if (!it.publishedAt) return true  // 无时间戳也列出
-        return new Date(it.publishedAt) >= todayStart
-      })
-      // 记录所有内容为已读（包括今日之前的）
+      // 首次检查：全部列出，完全靠 seenIds 去重，不做时间过滤
       feeds[index].seenIds = allItems.map(it => it.id).slice(-200)
       feeds[index].lastCheck = new Date().toISOString()
       saveFeedStore(feeds)
-
-      const todayMapped = todayItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
+      const todayMapped = allItems.map(it => ({ ...it, platform: feed.platform, sourceName: feed.name }))
       return { success: true, items: todayMapped, isFirstCheck: true, sourceName: feed.name, hasToday: todayMapped.length > 0 }
     }
 
