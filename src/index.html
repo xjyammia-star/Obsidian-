@@ -2457,42 +2457,15 @@ async function smartSaveNote(content, sourceType, sourceTitle, msgEl, onDone) {
 
 async function saveAnalyzeResult() {
   if (!analyzeResultText) { alert('没有可保存的分析结果'); return }
-  if (!currentVaultPath) { alert('请先设置知识库路径'); return }
-  const targetDir = currentInboxPath || currentVaultPath
-  // 用 analyzeFolderPath 推导文件夹显示名（analyze-folder-select 不存在于此页面）
+  // 用 analyzeFolderPath 推导标题
   let folderLabel = '分析'
   if (analyzeFolderPath) {
     const parts = analyzeFolderPath.replace(/\\/g, '/').split('/')
     folderLabel = parts[parts.length - 1] || '分析'
   }
-  const safeFolderName = folderLabel.replace(/[\/\:*?"<>|]/g, '-')
-  const now = new Date()
-  const date = now.toISOString().slice(0, 10)
-  const timeStr = now.toTimeString().slice(0, 5).replace(':', '-')
-  const title = 'AI分析-' + safeFolderName + '-' + date + '-' + timeStr
   const saveEl = document.getElementById('analyze-save-result')
   saveEl.classList.remove('hidden')
-  saveEl.className = 'import-result'
-  saveEl.textContent = '保存中...'
-  try {
-    const res = await window.api.createNote({
-      vaultPath: currentVaultPath,
-      targetDir: targetDir,
-      title: title,
-      template: 'blank',
-      body: analyzeResultText
-    })
-    if (res.success) {
-      saveEl.className = 'import-result success'
-      saveEl.innerHTML = '✅ 已保存。<button class="open-btn" style="margin-left:8px" onclick="openFile(\'' + esc(res.path) + '\')">📂 文件管理器查看</button>'
-    } else {
-      saveEl.className = 'import-result error'
-      saveEl.textContent = '❌ 保存失败：' + res.error
-    }
-  } catch(e) {
-    saveEl.className = 'import-result error'
-    saveEl.textContent = '❌ 保存失败：' + e.message
-  }
+  await smartSaveNote(analyzeResultText, '知识库分析', 'AI分析-' + folderLabel, saveEl)
 }
 
 window.api.onFilesDropped(function(paths) {
