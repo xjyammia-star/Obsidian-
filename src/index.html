@@ -2466,8 +2466,10 @@ async function saveAnalyzeResult() {
     folderLabel = parts[parts.length - 1] || '分析'
   }
   const safeFolderName = folderLabel.replace(/[\/\:*?"<>|]/g, '-')
-  const date = new Date().toISOString().slice(0, 10)
-  const title = 'AI分析-' + safeFolderName + '-' + date
+  const now = new Date()
+  const date = now.toISOString().slice(0, 10)
+  const timeStr = now.toTimeString().slice(0, 5).replace(':', '-')
+  const title = 'AI分析-' + safeFolderName + '-' + date + '-' + timeStr
   const saveEl = document.getElementById('analyze-save-result')
   saveEl.classList.remove('hidden')
   saveEl.className = 'import-result'
