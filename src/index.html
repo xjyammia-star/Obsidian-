@@ -2457,10 +2457,15 @@ async function smartSaveNote(content, sourceType, sourceTitle, msgEl, onDone) {
 }
 
 async function saveAnalyzeResult() {
-  if (!analyzeResultText || !currentVaultPath) return
+  if (!analyzeResultText) { alert('没有可保存的分析结果'); return }
+  if (!currentVaultPath) { alert('请先设置知识库路径'); return }
   const targetDir = currentInboxPath || currentVaultPath
-  const sel = document.getElementById('analyze-folder-select')
-  const folderLabel = sel.selectedOptions[0] ? sel.selectedOptions[0].text : '分析'
+  // 用 analyzeFolderPath 推导文件夹显示名（analyze-folder-select 不存在于此页面）
+  let folderLabel = '分析'
+  if (analyzeFolderPath) {
+    const parts = analyzeFolderPath.replace(/\\/g, '/').split('/')
+    folderLabel = parts[parts.length - 1] || '分析'
+  }
   const safeFolderName = folderLabel.replace(/[\/\:*?"<>|]/g, '-')
   const date = new Date().toISOString().slice(0, 10)
   const title = 'AI分析-' + safeFolderName + '-' + date
