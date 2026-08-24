@@ -2449,7 +2449,7 @@ async function smartSaveNote(content, sourceType, sourceTitle, msgEl, onDone) {
     msgEl.style.background = res.noMatch ? '#fff8e1' : '#e8f5e9'
     msgEl.style.color      = res.noMatch ? '#7a5c00' : '#2e6b3a'
     msgEl.innerHTML = msg +
-      ' <button class="open-btn" style="margin-left:8px" onclick="openFile(' + JSON.stringify(res.path) + ')">📂 查看</button>'
+      ' <button class="open-btn" style="margin-left:8px" onclick="openFile(\'' + esc(res.path) + '\')">📂 查看</button>'
   }
 
   if (typeof onDone === 'function') onDone(res)
@@ -2484,7 +2484,7 @@ async function saveAnalyzeResult() {
     })
     if (res.success) {
       saveEl.className = 'import-result success'
-      saveEl.innerHTML = '✅ 已保存。<button class="open-btn" style="margin-left:8px" onclick="openFile(' + JSON.stringify(res.path) + ')">📂 文件管理器查看</button>'
+      saveEl.innerHTML = '✅ 已保存。<button class="open-btn" style="margin-left:8px" onclick="openFile(\'' + esc(res.path) + '\')">📂 文件管理器查看</button>'
     } else {
       saveEl.className = 'import-result error'
       saveEl.textContent = '❌ 保存失败：' + res.error
