@@ -2299,9 +2299,12 @@ async function loadAnalyzeFolderFiles(folderPath, folderName) {
     updateAnalyzeCount(); return
   }
   listEl.innerHTML = res.files.map(function(f) {
+    const icon = f.type === 'pdf' ? '📄' : '📝'
+    const displayName = f.name.replace(/\.(md|pdf)$/, '')
     return '<label style="display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid #f5f4f0">'+
       '<input type="checkbox" checked data-path="' + esc(f.path) + '" onchange="updateAnalyzeCount()" style="width:14px;height:14px;cursor:pointer;flex-shrink:0;accent-color:#6c63d4">'+
-      '<span style="color:#5f5e5a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(f.name) + '">' + f.name.replace(/\.md$/, '') + '</span>'+
+      '<span style="flex-shrink:0">' + icon + '</span>'+
+      '<span style="color:#5f5e5a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(f.name) + '">' + displayName + '</span>'+
       '<span style="color:#b4b2a9;font-size:11px;flex-shrink:0">' + f.mtime + '</span>'+
     '</label>'
   }).join('')

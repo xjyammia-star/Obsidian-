@@ -4,6 +4,7 @@ const fs = require('fs')
 const https = require('https')
 const Store = require('electron-store')
 const { autoUpdater } = require('electron-updater')
+const pdfParse = require('pdf-parse')
 
 const store = new Store()
 let mainWindow
@@ -326,13 +327,14 @@ ipcMain.handle('get-folder-md-files', async (event, folderPath) => {
       if (item.startsWith('.')) continue
       const full = path.join(folderPath, item)
       const stat = fs.lstatSync(full)
-      if (!stat.isDirectory() && path.extname(item).toLowerCase() === '.md') {
-        files.push({ name: item, path: full, mtime: stat.mtime.toISOString().slice(0,10) })
+      const ext = path.extname(item).toLowerCase()
+      if (!stat.isDirectory() && (ext === '.md' || ext === '.pdf')) {
+        files.push({ name: item, path: full, mtime: stat.mtime.toISOString().slice(0,10), type: ext.slice(1) })
       }
       // 显示 iCloud 占位符中的 .md 文件（未下载）
       if (item.endsWith('.icloud') && item.includes('.md')) {
         const realName = item.replace(/^\./, '').replace(/\.icloud$/, '')
-        files.push({ name: realName, path: full, mtime: '', cloud: true })
+        files.push({ name: realName, path: full, mtime: '', cloud: true, type: 'md' })
       }
     }
     return { success: true, files }
@@ -1527,16 +1529,24 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
   if (!settings.apiKey || !settings.modelId) {
     return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
   }
-  const mdFiles = (filePaths || []).filter(p => p.endsWith('.md'))
-  if (!mdFiles.length) { return { success: false, error: '没有选择任何 Markdown 文件' } }
+  const allFiles = (filePaths || []).filter(p => p.endsWith('.md') || p.endsWith('.pdf'))
+  if (!allFiles.length) { return { success: false, error: '没有选择任何文件' } }
   const summaries = []
-  for (let i = 0; i < mdFiles.length; i++) {
-    const filePath = mdFiles[i]
-    const fileName = path.basename(filePath, '.md')
-    event.sender.send('ai-analyze-progress', { current: i + 1, total: mdFiles.length, fileName })
+  for (let i = 0; i < allFiles.length; i++) {
+    const filePath = allFiles[i]
+    const ext = path.extname(filePath).toLowerCase()
+    const fileName = path.basename(filePath, ext)
+    event.sender.send('ai-analyze-progress', { current: i + 1, total: allFiles.length, fileName })
     try {
-      const raw = fs.readFileSync(filePath, 'utf-8')
-      const body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 2000)
+      let body = ''
+      if (ext === '.pdf') {
+        const pdfBuffer = fs.readFileSync(filePath)
+        const pdfData = await pdfParse(pdfBuffer)
+        body = (pdfData.text || '').trim().slice(0, 2000)
+      } else {
+        const raw = fs.readFileSync(filePath, 'utf-8')
+        body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 2000)
+      }
       if (!body) { summaries.push({ fileName, title: fileName, summary: '（文件内容为空）', keywords: [], keyPoints: [] }); continue }
       const mapPrompt = '请阅读以下笔记，提取关键信息，只输出 JSON，不要加任何其他文字：\n{"title":"笔记标题或核心主题（15字内）","keywords":["关键词1","关键词2"],"summary":"核心内容一句话概括（60字内）","keyPoints":["要点1","要点2"]}\n\n笔记文件名：' + fileName + '\n笔记内容：\n' + body
       const replyObj4 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: mapPrompt }])
@@ -1546,7 +1556,7 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
       summaries.push({ fileName, title: parsed.title || fileName, keywords: parsed.keywords || [], summary: parsed.summary || '', keyPoints: parsed.keyPoints || [] })
     } catch (err) { summaries.push({ fileName, title: fileName, summary: '（解析失败）', keywords: [], keyPoints: [] }) }
   }
-  event.sender.send('ai-analyze-progress', { current: mdFiles.length, total: mdFiles.length, fileName: '正在生成报告...', reducing: true })
+  event.sender.send('ai-analyze-progress', { current: allFiles.length, total: allFiles.length, fileName: '正在生成报告...', reducing: true })
   const summaryText = summaries.map((s, i) =>
     '【' + (i+1) + '】' + (s.title || s.fileName) + '\n关键词：' + ((s.keywords || []).join('、') || '无') + '\n摘要：' + s.summary + '\n要点：' + ((s.keyPoints || []).join('；') || '无')
   ).join('\n\n')
@@ -1554,7 +1564,7 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
   try {
     const replyObj5 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: reducePrompt }], 4000)
     recordTokenUsage('analyze', 'text', replyObj5.usage.prompt_tokens||0, replyObj5.usage.completion_tokens||0)
-    return { success: true, result: replyObj5.content, fileCount: mdFiles.length }
+    return { success: true, result: replyObj5.content, fileCount: allFiles.length }
   } catch (err) { return { success: false, error: '生成报告失败：' + err.message } }
 })
 
