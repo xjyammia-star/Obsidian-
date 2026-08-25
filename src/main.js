@@ -1192,7 +1192,7 @@ ipcMain.handle('select-inbox-folder', async () => {
 
 // ── AI 调用（火山引擎）──
 function callVolcanoAI(apiKey, modelId, endpoint, messages, maxTokens) {
-  const timeoutMs = 60000
+  const timeoutMs = 120000
   const apiCall = new Promise((resolve, reject) => {
     const body = JSON.stringify({ model: modelId, messages, max_tokens: maxTokens || 500 })
     const url = new URL(endpoint + '/chat/completions')
@@ -1221,7 +1221,7 @@ function callVolcanoAI(apiKey, modelId, endpoint, messages, maxTokens) {
     req.end()
   })
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('AI 请求超时（20秒）')), timeoutMs)
+    setTimeout(() => reject(new Error('AI 请求超时（120秒），内容可能过长，请减少文件数量')), timeoutMs)
   )
   return Promise.race([apiCall, timeout])
 }
@@ -1531,6 +1531,67 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
   }
   const allFiles = (filePaths || []).filter(p => p.endsWith('.md') || p.endsWith('.pdf'))
   if (!allFiles.length) { return { success: false, error: '没有选择任何文件' } }
+
+  // ── 读取每个文件的正文 ──
+  async function readFileBody(filePath) {
+    const ext = path.extname(filePath).toLowerCase()
+    if (ext === '.pdf') {
+      const pdfBuffer = fs.readFileSync(filePath)
+      const pdfData = await pdfParse(pdfBuffer)
+      return (pdfData.text || '').trim()
+    } else {
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      return raw.replace(/^---[\s\S]*?---\n?/, '').trim()
+    }
+  }
+
+  // ── 单文件模式：直接把全文送给 AI，不做 Map 摘要 ──
+  // 内容超过 3000 字时自动分段处理，每段独立调用 AI，最后拼合结果
+  if (allFiles.length === 1) {
+    const filePath = allFiles[0]
+    const ext = path.extname(filePath).toLowerCase()
+    const fileName = path.basename(filePath, ext)
+    event.sender.send('ai-analyze-progress', { current: 1, total: 1, fileName })
+    try {
+      const body = await readFileBody(filePath)
+      if (!body) {
+        const reason = ext === '.pdf' ? 'PDF 为扫描图片版，无法提取文字' : '文件内容为空'
+        return { success: false, error: reason }
+      }
+
+      const CHUNK_SIZE = 3000
+      const chunks = []
+      for (let i = 0; i < body.length; i += CHUNK_SIZE) {
+        chunks.push(body.slice(i, i + CHUNK_SIZE))
+      }
+
+      const results = []
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkLabel = chunks.length > 1 ? `（第 ${i+1}/${chunks.length} 段）` : ''
+        event.sender.send('ai-analyze-progress', {
+          current: 1, total: 1,
+          fileName: chunks.length > 1 ? `正在处理第 ${i+1}/${chunks.length} 段...` : '正在生成报告...',
+          reducing: true
+        })
+        const chunkPrompt = chunks.length > 1
+          ? `你是一个知识管理助手。以下是文件「${fileName}」的第 ${i+1}/${chunks.length} 段内容：\n\n${chunks[i]}\n\n---\n用户需求：${userPrompt}\n\n请根据用户需求处理这段内容${chunkLabel}。用中文回答，使用 Markdown 格式。`
+          : `你是一个知识管理助手。以下是文件「${fileName}」的完整内容：\n\n${chunks[i]}\n\n---\n用户需求：${userPrompt}\n\n请根据用户需求处理以上内容。用中文回答，使用 Markdown 格式。`
+        const replyObj = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: chunkPrompt }], 6000)
+        recordTokenUsage('analyze', 'text', replyObj.usage.prompt_tokens||0, replyObj.usage.completion_tokens||0)
+        results.push(replyObj.content)
+      }
+
+      const finalResult = chunks.length > 1
+        ? results.map((r, i) => `## 第 ${i+1} 段\n\n${r}`).join('\n\n---\n\n')
+        : results[0]
+
+      return { success: true, result: finalResult, fileCount: 1 }
+    } catch (err) {
+      return { success: false, error: '处理失败：' + err.message }
+    }
+  }
+
+  // ── 多文件模式：Map-Reduce ──
   const summaries = []
   for (let i = 0; i < allFiles.length; i++) {
     const filePath = allFiles[i]
@@ -1538,23 +1599,24 @@ ipcMain.handle('ai-analyze-folder', async (event, { filePaths, userPrompt }) => 
     const fileName = path.basename(filePath, ext)
     event.sender.send('ai-analyze-progress', { current: i + 1, total: allFiles.length, fileName })
     try {
-      let body = ''
-      if (ext === '.pdf') {
-        const pdfBuffer = fs.readFileSync(filePath)
-        const pdfData = await pdfParse(pdfBuffer)
-        body = (pdfData.text || '').trim().slice(0, 2000)
-      } else {
-        const raw = fs.readFileSync(filePath, 'utf-8')
-        body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 2000)
+      const body = await readFileBody(filePath)
+      if (!body) {
+        const reason = ext === '.pdf' ? '（PDF 为扫描图片版，无法提取文字）' : '（文件内容为空）'
+        summaries.push({ fileName, title: fileName, summary: reason, keywords: [], keyPoints: [] })
+        continue
       }
-      if (!body) { summaries.push({ fileName, title: fileName, summary: '（文件内容为空）', keywords: [], keyPoints: [] }); continue }
-      const mapPrompt = '请阅读以下笔记，提取关键信息，只输出 JSON，不要加任何其他文字：\n{"title":"笔记标题或核心主题（15字内）","keywords":["关键词1","关键词2"],"summary":"核心内容一句话概括（60字内）","keyPoints":["要点1","要点2"]}\n\n笔记文件名：' + fileName + '\n笔记内容：\n' + body
+      const bodyTrunc = body.slice(0, 2000)
+      const mapPrompt = '请阅读以下内容，提取关键信息，只输出 JSON，格式严格如下，不要加任何其他文字或代码块标记：\n{"title":"标题或核心主题（15字内）","keywords":["关键词1","关键词2"],"summary":"核心内容一句话概括（60字内）","keyPoints":["要点1","要点2"]}\n\n文件名：' + fileName + '\n内容：\n' + bodyTrunc
       const replyObj4 = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint, [{ role: 'user', content: mapPrompt }])
       recordTokenUsage('analyze', 'text', replyObj4.usage.prompt_tokens||0, replyObj4.usage.completion_tokens||0)
-      const clean = (replyObj4.content||'').replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(clean)
+      const raw4 = (replyObj4.content || '').trim()
+      const jsonMatch = raw4.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('模型未返回JSON：' + raw4.slice(0, 100))
+      const parsed = JSON.parse(jsonMatch[0])
       summaries.push({ fileName, title: parsed.title || fileName, keywords: parsed.keywords || [], summary: parsed.summary || '', keyPoints: parsed.keyPoints || [] })
-    } catch (err) { summaries.push({ fileName, title: fileName, summary: '（解析失败）', keywords: [], keyPoints: [] }) }
+    } catch (err) {
+      summaries.push({ fileName, title: fileName, summary: '（解析失败：' + err.message.slice(0, 80) + '）', keywords: [], keyPoints: [] })
+    }
   }
   event.sender.send('ai-analyze-progress', { current: allFiles.length, total: allFiles.length, fileName: '正在生成报告...', reducing: true })
   const summaryText = summaries.map((s, i) =>
