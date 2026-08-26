@@ -4,6 +4,9 @@ const fs = require('fs')
 const https = require('https')
 const Store = require('electron-store')
 const { autoUpdater } = require('electron-updater')
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix { constructor() {} }
+}
 const pdfParse = require('pdf-parse')
 
 const store = new Store()
