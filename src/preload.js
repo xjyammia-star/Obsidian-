@@ -94,4 +94,7 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateBrowserDownload: (cb) => ipcRenderer.on('update-browser-download', (_e) => cb()),
   onUpdateAvailableMac:  (cb)  => ipcRenderer.on('update-available-mac', (_e, ver) => cb(ver)),
   onFeedDebug:           (cb)  => ipcRenderer.on('feed-debug', (_e, data) => cb(data)),
+  // ── 学习助手 ──
+  studyInvoke:         (channel, args) => ipcRenderer.invoke(channel, args),
+  readFileContent:     (filePath)      => ipcRenderer.invoke('read-file-content', filePath),
 })

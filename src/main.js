@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const https = require('https')
@@ -2805,4 +2805,390 @@ ipcMain.handle('feed-check-all', async (event) => {
   }
   saveFeedStore(feeds)
   return { success: true, items: allItems, firstCheckResults }
+})
+
+
+// ══════════════════════════════════════════════
+// ── 学习助手 IPC Handlers ──
+// ══════════════════════════════════════════════
+
+// ── 学习笔记保存 ──
+// aipolish: true = AI整理后保存, false = 直接保存原文
+ipcMain.handle('study-save-note', async (event, { title, content, aiPolish, outputLang, vaultPath, vaultFolders, inboxFolder, inboxPath }) => {
+  const settings = store.get('aiSettings', {})
+
+  let finalContent = content
+  let finalTitle = title || '未命名笔记'
+  const langInstruction = outputLang === '英文'
+    ? 'Please write the entire output in English only. Do not use any Chinese.'
+    : '请用中文输出全部内容。'
+
+  if (aiPolish) {
+    if (!settings.apiKey || !settings.modelId) {
+      return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+    }
+    const polishPrompt = `你是一个笔记整理助手。${langInstruction}
+请对以下笔记内容进行整理：
+1. 纠正错别字和明显的语法错误
+2. 适当调整语句使其更通顺
+3. 整理成规范的 Markdown 格式
+4. 不要改变内容的主要意思和观点
+5. 保留原有的所有信息，不要删减内容
+
+笔记标题：${finalTitle}
+笔记内容：
+${content}
+
+请直接输出整理后的 Markdown 内容，不要加任何说明。`
+    try {
+      const replyObj = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint,
+        [{ role: 'user', content: polishPrompt }], 4000)
+      recordTokenUsage('study', 'text', replyObj.usage.prompt_tokens||0, replyObj.usage.completion_tokens||0)
+      if (replyObj.content) finalContent = replyObj.content
+    } catch (err) {
+      return { success: false, error: 'AI 整理失败：' + err.message }
+    }
+  }
+
+  // 用 smartSaveNote 逻辑保存（AI 匹配文件夹）
+  return await doSmartSave({
+    content: finalContent,
+    vaultPath, vaultFolders, inboxFolder, inboxPath,
+    sourceType: '学习笔记',
+    sourceTitle: finalTitle,
+    settings
+  })
+})
+
+// ── 知识点扩充 ──
+ipcMain.handle('study-expand-knowledge', async (event, { title, description, ageGroup, curriculum, systemType, outputLang, vaultPath, vaultFolders, inboxFolder, inboxPath }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+
+  // 根据年龄段/课程/体系生成教学深度说明
+  let levelDesc = ''
+  if (ageGroup === '小学') {
+    if (systemType === '国际') {
+      levelDesc = '面向国际学校小学生（6-12岁），参照 Cambridge Primary 或 IB PYP 课程框架，语言简单易懂，多用生动比喻和探究式例子，注重概念理解而非死记硬背，鼓励跨学科联系。'
+    } else {
+      levelDesc = '面向中国国内小学生（6-12岁），参照人教版课程标准，语言简单易懂，多用生活化例子，与教材知识点紧密结合，注重基础概念的准确性，符合小学阶段的认知水平。'
+    }
+  } else if (ageGroup === '初中') {
+    if (systemType === '国际') {
+      levelDesc = '面向国际学校初中生（11-16岁），参照 Cambridge Lower Secondary 或 IB MYP 课程框架，适当引入专业术语，注重概念理解和实际应用，鼓励批判性思维，内容深度适中，避免过于应试化。'
+    } else {
+      levelDesc = '面向中国国内初中生（12-15岁），参照人教版课程标准，内容紧扣中考考点，术语使用与教材保持一致，适当引入专业术语并加以解释，注重知识点的系统性，结合典型例题帮助理解。'
+    }
+  } else if (ageGroup === '高中') {
+    const currMap = {
+      'IGCSE': 'IGCSE课程体系（剑桥国际课程，面向14-16岁），按IGCSE考试大纲要求深度，注重基础但要完整准确，术语使用符合剑桥考试标准。',
+      'A-Level': 'A-Level课程体系（英国高中课程），按A-Level考试深度，内容较深，需要涉及原理推导和较复杂的知识点，术语和表达方式符合A-Level标准。',
+      'AP': 'AP课程体系（美国大学先修课程），按AP考试要求，内容与大学一年级相当，需要较强的分析能力，术语和概念符合AP课程框架。',
+      'IB': 'IB课程体系（国际文凭课程），按IB Diploma要求，重视知识间的联系和批判性思维（TOK视角），内容全面深入，符合IB评估标准。',
+      '普通高中': '中国普通高中课程体系，按高考要求深度，内容规范，注重基础知识的系统性和完整性，术语使用与人教版教材保持一致。'
+    }
+    levelDesc = currMap[curriculum] || 'A-Level课程体系，内容深度适中偏高。'
+  }
+
+  const langInstruction = outputLang === '英文'
+    ? 'IMPORTANT: Write the entire output in English only. Do not use any Chinese characters.'
+    : '请用中文输出全部内容。'
+
+  const expandPrompt = `你是一位专业的教育内容创作者。${langInstruction}
+请根据以下信息，对知识点进行系统性扩充和完善。
+
+知识点标题：${title}
+用户描述和理解：
+${description || '（用户未提供描述）'}
+
+教学对象：${ageGroup}${curriculum ? ' - ' + curriculum : ''}
+深度要求：${levelDesc}
+
+请完成以下任务：
+1. 如果用户描述中有概念错误，请先指出并纠正
+2. 基于正确的基础，系统扩充这个知识点，包括：
+   - 核心定义和基本概念
+   - 重要原理或规律（根据年龄段决定深度）
+   - 具体例子和应用场景
+   - 与其他知识点的联系
+   - 该年龄段/课程需要重点掌握的内容
+3. 内容深度严格符合 ${ageGroup}${curriculum ? ' ' + curriculum : ''} 的学习要求
+4. 语言风格适合目标学生群体
+
+请用 Markdown 格式输出，结构清晰，重点突出。`
+
+  try {
+    const replyObj = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: expandPrompt }], 6000)
+    recordTokenUsage('study', 'text', replyObj.usage.prompt_tokens||0, replyObj.usage.completion_tokens||0)
+
+    if (!replyObj.content) return { success: false, error: 'AI 返回内容为空' }
+
+    return { success: true, result: replyObj.content }
+  } catch (err) {
+    return { success: false, error: 'AI 扩充失败：' + err.message }
+  }
+})
+
+ipcMain.handle('study-generate-review', async (event, { filePaths, userRequirements, generateType, outputLang, vaultPath }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+
+  const allFiles = (filePaths || []).filter(p => p.endsWith('.md') || p.endsWith('.pdf'))
+  if (!allFiles.length) return { success: false, error: '没有选择任何文件' }
+
+  const langInstruction = outputLang === '英文'
+    ? 'IMPORTANT: Write the entire output in English only. Do not use any Chinese characters.'
+    : '请用中文输出全部内容。'
+
+  // 读取所有文件内容
+  const fileSummaries = []
+  for (const filePath of allFiles) {
+    try {
+      const ext = path.extname(filePath).toLowerCase()
+      const fileName = path.basename(filePath, ext)
+      let body = ''
+      if (ext === '.pdf') {
+        body = await extractPdfText(filePath, 3000)
+      } else {
+        const raw = fs.readFileSync(filePath, 'utf-8')
+        body = raw.replace(/^---[\s\S]*?---\n?/, '').trim().slice(0, 3000)
+      }
+      if (body) fileSummaries.push({ fileName, body })
+    } catch (_) {}
+  }
+
+  if (!fileSummaries.length) return { success: false, error: '所选文件内容为空或无法读取' }
+
+  const combinedContent = fileSummaries.map((f, i) =>
+    `【文件${i+1}：${f.fileName}】\n${f.body}`
+  ).join('\n\n---\n\n')
+
+  let typeInstruction = ''
+  if (generateType === 'review') {
+    typeInstruction = '请生成系统的复习资料，包括：核心知识点梳理、重要概念总结、知识框架（可用表格或层级结构）、易错点提醒。'
+  } else if (generateType === 'quiz') {
+    typeInstruction = `请根据内容生成练习题。格式要求如下：
+第一部分：题目（只显示题目，不显示答案）
+- 选择题（5-8题）：只列出题目和选项 A/B/C/D，不标注答案
+- 填空题（3-5题）：只列出题目，用"___"表示空格
+- 简答题（2-3题）：只列出题目
+
+第二部分：答案与解析（放在所有题目之后，用分隔线隔开）
+- 对应每道题给出正确答案和详细解析`
+  } else {
+    typeInstruction = `请生成两部分内容：
+
+第一部分：复习资料
+- 核心知识点梳理、重要概念总结、知识框架、易错点提醒
+
+第二部分：练习题（题目部分）
+- 选择题（5题）：只列出题目和选项，不标注答案
+- 填空题（3题）：只列出题目，用"___"表示空格
+- 简答题（2题）：只列出题目
+
+第三部分：答案与解析（用分隔线与题目部分分隔）
+- 对应每道题给出正确答案和详细解析`
+  }
+
+  const reviewPrompt = `你是一位专业的学习辅导老师。${langInstruction}
+请根据以下知识库资料，为学生生成学习辅助内容。
+
+${userRequirements ? `学生特别要求：${userRequirements}\n` : ''}
+
+任务说明：
+${typeInstruction}
+
+要求：
+- 内容要基于所提供的资料，不要凭空编造
+- 结构清晰，重点突出
+- 使用 Markdown 格式，便于阅读
+
+知识库资料（共${fileSummaries.length}个文件）：
+${combinedContent}`
+
+  try {
+    const replyObj = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: reviewPrompt }], 6000)
+    recordTokenUsage('study', 'text', replyObj.usage.prompt_tokens||0, replyObj.usage.completion_tokens||0)
+
+    if (!replyObj.content) return { success: false, error: 'AI 返回内容为空' }
+
+    return { success: true, result: replyObj.content, fileCount: fileSummaries.length }
+  } catch (err) {
+    return { success: false, error: 'AI 生成失败：' + err.message }
+  }
+})
+
+// ── 内部辅助函数：统一保存逻辑（供学习助手复用 smartSaveNote）──
+async function doSmartSave({ content, vaultPath, vaultFolders, inboxFolder, inboxPath, sourceType, sourceTitle, settings }) {
+  const folderList = (vaultFolders || [])
+    .map(f => f.label)
+    .filter(l => l && l !== '（根目录）')
+    .join('、')
+
+  const contentSnippet = (content || '').slice(0, 3000)
+
+  const prompt = `你是一个知识库笔记整理助手。
+知识库现有文件夹：${folderList || '（暂无文件夹）'}
+笔记来源类型：${sourceType || '未知'}
+笔记原始标题：${sourceTitle || '未知'}
+
+请根据以下笔记内容，判断并输出：
+1. filename：适合的文件名（不含扩展名，不超过40字，不能含 \\ / : * ? " < > | 等特殊字符）
+2. tags：适合的标签（用英文逗号分隔，中文，2~4个）
+3. folder：最匹配的文件夹相对路径（必须从上面「知识库现有文件夹」列表中选择，没有合适则输出 ""）
+
+笔记内容（前3000字）：
+${contentSnippet}
+
+请严格按以下 JSON 格式回复：
+{"filename":"xxx","tags":"xxx,xxx","folder":"xxx"}`
+
+  let aiResult = { filename: '', tags: '', folder: '' }
+  try {
+    const replyObj = await callVolcanoAI(settings.apiKey, settings.modelId, settings.endpoint,
+      [{ role: 'user', content: prompt }], 500)
+    recordTokenUsage('save', 'text', replyObj.usage.prompt_tokens||0, replyObj.usage.completion_tokens||0)
+    const clean = (replyObj.content||'').replace(/```json|```/g, '').trim()
+    aiResult = JSON.parse(clean)
+  } catch (_) {}
+
+  const filename = (aiResult.filename || '').replace(/[\\/:*?"<>|]/g, '_').trim() ||
+    (sourceTitle || '未命名笔记').replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)
+  const tags = aiResult.tags || ''
+  const aiFolder = (aiResult.folder || '').trim()
+
+  let targetDir = null
+  if (aiFolder) {
+    const matched = (vaultFolders || []).find(f =>
+      f.label && f.label.replace(/\\/g, '/') === aiFolder.replace(/\\/g, '/')
+    )
+    if (matched && matched.value) targetDir = matched.value
+  }
+
+  let usedInbox = false
+  if (!targetDir) {
+    usedInbox = true
+    if (inboxFolder) targetDir = inboxFolder
+    else if (inboxPath) targetDir = inboxPath
+    else return { success: false, error: '没有匹配的文件夹，且未设置临时文件夹，请先在系统设置中配置。' }
+  }
+
+  try {
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
+  } catch (e) {
+    return { success: false, error: '目标文件夹创建失败：' + e.message }
+  }
+
+  const now = new Date()
+  const dateStr = now.toISOString().slice(0, 10)
+  const timeStr = now.toTimeString().slice(0, 5).replace(':', '-')
+  const tagArr = tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []
+  const tagYaml = tagArr.length ? '[' + tagArr.join(', ') + ']' : '[]'
+
+  const hasOwnFm = content.trimStart().startsWith('---')
+  let fileContent
+  if (hasOwnFm) {
+    fileContent = content
+  } else {
+    fileContent = `---\ntitle: ${filename}\ndate: ${dateStr}\ntags: ${tagYaml}\nsource: ${sourceType || '学习助手'}\n---\n\n${content}`
+  }
+
+  // 避免重名：加时间后缀
+  let finalFilename = filename
+  let savePath = path.join(targetDir, finalFilename + '.md')
+  if (fs.existsSync(savePath)) {
+    finalFilename = filename + '_' + timeStr
+    savePath = path.join(targetDir, finalFilename + '.md')
+  }
+
+  fs.writeFileSync(savePath, fileContent, 'utf-8')
+
+  // 触发 Hub 更新
+  try { updateHubFile(targetDir, vaultPath, settings) } catch (_) {}
+
+  return {
+    success: true,
+    path: savePath,
+    filename: finalFilename + '.md',
+    folder: aiFolder || '（临时文件夹）',
+    usedInbox,
+    tags
+  }
+}
+
+// ── 学习助手：导出 PDF（用 Electron BrowserWindow printToPDF）──
+ipcMain.handle('study-export-pdf', async (event, { htmlBody, title }) => {
+  try {
+    const { BrowserWindow: BW, dialog } = require('electron')
+
+    // 弹出保存对话框
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: '保存 PDF 文件',
+      defaultPath: (title || '学习资料') + '.pdf',
+      filters: [{ name: 'PDF 文件', extensions: ['pdf'] }]
+    })
+    if (saveResult.canceled || !saveResult.filePath) return { success: false, error: '已取消' }
+
+    const savePath = saveResult.filePath
+
+    // 构建完整 HTML
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body{font-family:'Microsoft YaHei',Arial,sans-serif;margin:28px 36px;line-height:1.9;color:#222;font-size:14px}
+  h1{font-size:20px;color:#2c2c2a;border-bottom:2px solid #534ab7;padding-bottom:6px;margin-bottom:16px}
+  h2{font-size:16px;color:#3c3489;margin-top:18px;margin-bottom:8px}
+  h3{font-size:14px;color:#444;margin-top:14px;margin-bottom:6px}
+  li{margin:4px 0;line-height:1.7}
+  p{margin:6px 0}
+  strong{font-weight:600;color:#1a1a1a}
+  hr{border:none;border-top:1px solid #ddd;margin:16px 0}
+</style>
+<title>${title || '学习资料'}</title>
+</head><body>
+<h1>${title || '学习资料'}</h1>
+<div>${htmlBody}</div>
+</body></html>`
+
+    // 用隐藏的 BrowserWindow 渲染后导出 PDF
+    const win = new BW({ show: false, webPreferences: { nodeIntegration: false } })
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(fullHtml))
+
+    const pdfBuffer = await win.webContents.printToPDF({
+      marginsType: 1,
+      pageSize: 'A4',
+      printBackground: false,
+      landscape: false
+    })
+    win.destroy()
+
+    fs.writeFileSync(savePath, pdfBuffer)
+    // 打开文件夹定位到文件
+    shell.showItemInFolder(savePath)
+    return { success: true, path: savePath }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+ipcMain.handle('read-file-content', async (event, filePath) => {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    return { success: true, content }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// ── 学习助手：统一保存（知识点扩充、复习备考内容保存）──
+ipcMain.handle('study-smart-save', async (event, { content, vaultPath, vaultFolders, inboxFolder, inboxPath, sourceType, sourceTitle }) => {
+  const settings = store.get('aiSettings', {})
+  if (!settings.apiKey || !settings.modelId) {
+    return { success: false, error: '请先在系统设置中配置 API Key 和模型 ID' }
+  }
+  return await doSmartSave({ content, vaultPath, vaultFolders, inboxFolder, inboxPath, sourceType, sourceTitle, settings })
 })
