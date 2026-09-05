@@ -1886,6 +1886,28 @@ async function doSearch() {
     document.getElementById('search-results').innerHTML = '<div class="empty-tip">输入关键词或设置筛选条件后点击搜索</div>'
     return
   }
+
+  // 如果搜索词以 # 开头，走标签搜索逻辑
+  if (query.startsWith('#')) {
+    const tag = query.slice(1).trim()
+    if (!tag) return
+    const el = document.getElementById('search-results')
+    el.innerHTML = '<div class="loading">搜索中...</div>'
+    const res = await window.api.searchByTag({ vaultPath: currentVaultPath, tag })
+    if (!res.success) { el.innerHTML = '<div class="empty-tip">标签搜索出错</div>'; return }
+    if (!res.results.length) { el.innerHTML = `<div class="empty-tip">没有找到含有标签 #${tag} 的笔记</div>`; return }
+    el.innerHTML = `<div class="result-count">标签 #${tag} 的 ${res.results.length} 篇笔记</div>` +
+      res.results.map(r => `<div class="result-item" style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div class="result-name">📄 ${r.name}</div>
+          <div class="result-path" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.relativePath}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="openFile(${JSON.stringify(r.path)})">📂 文件管理器</button>
+          <button class="obs-btn" onclick="openInObsidian(${JSON.stringify(r.path)})">📖 Obsidian</button>
+        </div></div>`).join('')
+    return
+  }
   const el = document.getElementById('search-results')
   el.innerHTML = '<div class="loading">搜索中...</div>'
   const res = await window.api.searchFiles({ vaultPath: currentVaultPath, query, fileTypes, dateFrom, dateTo, sortBy })
